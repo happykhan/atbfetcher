@@ -20,7 +20,7 @@ import pandas as pd
 from atbfetcher.metadata import load_qualibact_cutoffs
 from atbfetcher.plotting import plot_selection
 from atbfetcher.quality import filter_by_quality
-from atbfetcher.sampling import stratified_sample
+from atbfetcher.sampling import REFSEQ_COLUMNS, stratified_sample
 
 logger = logging.getLogger(__name__)
 
@@ -193,8 +193,8 @@ def species(species_name, output, n, seed, verbose):
         click.echo("No assemblies passed quality filters.", err=True)
         sys.exit(1)
 
-    click.echo(f"Selecting {n} genomes via stratified sampling...")
-    selected_df = stratified_sample(hq_df, n=n, seed=seed)
+    click.echo(f"Selecting {n} genomes via stratified sampling (by genome size)...")
+    selected_df = stratified_sample(hq_df, n=n, seed=seed, columns=REFSEQ_COLUMNS)
     click.echo(f"  Selected {len(selected_df)} genomes")
 
     click.echo("Generating selection plot...")

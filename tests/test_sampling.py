@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from atbfetcher.sampling import stratified_sample
+from atbfetcher.sampling import REFSEQ_COLUMNS, stratified_sample
 
 
 def _make_large_df(n: int = 500, seed: int = 0) -> pd.DataFrame:
@@ -78,5 +78,12 @@ class TestStratifiedSample:
         """Temporary bin columns should be dropped from output."""
         df = _make_large_df(500)
         result = stratified_sample(df, n=100, seed=42)
-        assert "n50_bin" not in result.columns
-        assert "size_bin" not in result.columns
+        assert not any(c.startswith("_bin_") for c in result.columns)
+
+    def test_genome_size_only_mode(self):
+        """Should work with 1D binning on Genome_Size only (RefSeq mode)."""
+        df = _make_large_df(500)
+        result = stratified_sample(df, n=100, seed=42, columns=REFSEQ_COLUMNS)
+        assert len(result) == 100
+        assert result["sample"].nunique() == len(result)
+        assert not any(c.startswith("_bin_") for c in result.columns)

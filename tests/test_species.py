@@ -5,9 +5,31 @@ import pandas as pd
 from atbfetcher.species import (
     clean_species_name,
     get_samples_for_species,
+    is_placeholder_species,
     list_species,
     normalize_for_matching,
 )
+
+
+class TestIsPlaceholderSpecies:
+    """Tests for GTDB placeholder species detection."""
+
+    def test_detects_numeric_placeholder(self):
+        assert is_placeholder_species("Bacillus sp000746275") is True
+
+    def test_detects_various_placeholders(self):
+        assert is_placeholder_species("Clostridium sp001234567") is True
+        assert is_placeholder_species("Enterobacter sp900112345") is True
+
+    def test_real_species_not_placeholder(self):
+        assert is_placeholder_species("Escherichia coli") is False
+        assert is_placeholder_species("Staphylococcus aureus") is False
+
+    def test_species_with_suffix_not_placeholder(self):
+        assert is_placeholder_species("Enterobacter hormaechei_A") is False
+
+    def test_genus_only_not_placeholder(self):
+        assert is_placeholder_species("Pseudomonas") is False
 
 
 class TestCleanSpeciesName:
@@ -58,9 +80,18 @@ class TestListSpecies:
         names = list_species(sample_species_calls_df)
         assert len(names) == len(set(names))
 
+    def test_excludes_placeholder_species(self, sample_species_calls_df):
+        names = list_species(sample_species_calls_df)
+        assert not any("sp000" in n for n in names)
+        assert "Bacillus sp000746275" not in names
+
     def test_raw_mode_keeps_suffixes(self, sample_species_calls_df):
         names = list_species(sample_species_calls_df, raw=True)
         assert "Enterobacter hormaechei_A" in names
+
+    def test_raw_mode_excludes_placeholders(self, sample_species_calls_df):
+        names = list_species(sample_species_calls_df, raw=True)
+        assert "Bacillus sp000746275" not in names
 
 
 class TestGetSamplesForSpecies:
@@ -86,3 +117,7 @@ class TestGetSamplesForSpecies:
     def test_case_insensitive_match(self, sample_species_calls_df):
         result = get_samples_for_species("escherichia coli", sample_species_calls_df)
         assert len(result) == 3
+
+    def test_placeholder_species_returns_empty(self, sample_species_calls_df):
+        result = get_samples_for_species("Bacillus sp000746275", sample_species_calls_df)
+        assert len(result) == 0

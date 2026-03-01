@@ -14,7 +14,7 @@ def sample_species_calls_df():
     return pd.DataFrame({
         "sample": [
             "SAMN001", "SAMN002", "SAMN003", "SAMN004",
-            "SAMN005", "SAMN006", "SAMN007",
+            "SAMN005", "SAMN006", "SAMN007", "SAMN008",
         ],
         "species": [
             "Escherichia coli",
@@ -24,6 +24,7 @@ def sample_species_calls_df():
             "Klebsiella pneumoniae",
             "Staphylococcus aureus",
             "Escherichia coli",
+            "Bacillus sp000746275",
         ],
     })
 

@@ -4,12 +4,14 @@ Fetch genomes from [AllTheBacteria](https://allthebacteria.org) (ATB) and [NCBI 
 
 ## Features
 
-- **Species subsample**: Stratified sampling by GC content and genome size for representative subsets
+- **Species subsample**: Stratified sampling by contig N50 and genome size for representative subsets
 - **MLST-based selection**: Pick genomes by MLST sequence type for phylogenetic diversity
 - **Accession list**: Fetch specific genomes by accession ID
-- **RefSeq mode**: Same workflow against NCBI RefSeq data
+- **RefSeq mode**: Same workflow against NCBI RefSeq data (stratified by genome size)
 - **Quality filtering**: Automatic quality control via [Qualibact](https://qualibact.org) per-species cutoffs and [CheckM2](https://github.com/chklovski/CheckM2) metrics
 - **Caching**: Downloaded metadata cached locally as Parquet for fast reuse
+- **Multi-threaded decompression**: Parallel XZ extraction for faster downloads
+- **Rich logging**: Colourful CLI output via [Rich](https://github.com/Textualize/rich)
 
 ## Installation
 
@@ -17,11 +19,18 @@ This project uses [Pixi](https://pixi.sh) to manage both conda packages (for `nc
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/atbfetcher.git
+git clone https://github.com/happykhan/atbfetcher.git
 cd atbfetcher
 
 # Install all dependencies (creates isolated environment)
 pixi install
+```
+
+### Docker
+
+```bash
+docker build -t atbfetcher .
+docker run atbfetcher atbfetcher --help
 ```
 
 ## Quick Start
@@ -30,7 +39,15 @@ pixi install
 
 ```bash
 pixi run atbfetcher list-species
-pixi run atbfetcher list-species --raw   # show original GTDB names
+pixi run atbfetcher list-species --raw     # show original GTDB names
+pixi run atbfetcher list-species --count   # show genome counts, highest first
+```
+
+### Show species genome counts
+
+```bash
+pixi run atbfetcher species-count
+pixi run atbfetcher species-count --top 20   # top 20 species
 ```
 
 ### Fetch a species subsample
@@ -39,10 +56,13 @@ pixi run atbfetcher list-species --raw   # show original GTDB names
 pixi run atbfetcher species "Escherichia coli" \
   --output ./benchmark_ecoli \
   --n 1000 \
-  --seed 42
+  --seed 42 \
+  --threads 8
 ```
 
 ### Fetch by MLST sequence types
+
+Requires `mlst_processed_all_samples.tsv.xz` in the `data/` directory.
 
 ```bash
 pixi run atbfetcher mlst "Escherichia coli" \
@@ -80,6 +100,7 @@ Fetch a stratified subsample of genomes for a species from ATB.
 | `--output`, `-o` | (required) | Output directory for assemblies |
 | `--n`, `-n` | 1000 | Number of genomes to select |
 | `--seed` | 42 | Random seed for reproducibility |
+| `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 | `--cache-dir` | `~/.atbfetcher` | Directory for cached metadata |
 | `--no-cache` | False | Skip caching, download fresh |
 | `--refresh` | False | Force re-download of cached metadata |
@@ -95,6 +116,7 @@ Select genomes based on MLST sequence types, ensuring diversity across STs.
 | `--output`, `-o` | (required) | Output directory |
 | `--n`, `-n` | 1000 | Number of genomes to select |
 | `--seed` | 42 | Random seed |
+| `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 
 ### `atbfetcher accessions`
 
@@ -102,11 +124,15 @@ Fetch specific assemblies by accession ID.
 
 ### `atbfetcher list-species`
 
-Print available species names. Use `--raw` for original GTDB names.
+Print available species names. Use `--raw` for original GTDB names, `--count` to show genome counts ordered highest to lowest.
+
+### `atbfetcher species-count`
+
+Show the number of HQ genomes per species. Use `--top N` to limit output.
 
 ### `refseqfetcher species`
 
-Fetch a stratified subsample from NCBI RefSeq.
+Fetch a stratified subsample from NCBI RefSeq (stratified by genome size only since RefSeq genomes are typically single-contig).
 
 ### `refseqfetcher accessions`
 
@@ -122,10 +148,11 @@ Fetch specific RefSeq assemblies by accession.
 | `species_calls.tsv.gz` | OSF | Sylph species assignments (GTDB taxonomy) |
 | `checkm2.tsv.gz` | OSF | Quality metrics (completeness, contamination, etc.) |
 | Qualibact cutoffs | qualibact.org | Per-species quality thresholds |
+| `mlst_processed_all_samples.tsv.xz` | User-provided | MLST assignments for all samples |
 
 ### Species Naming
 
-ATB uses [GTDB taxonomy](https://gtdb.ecogenomic.org/) via [Sylph](https://github.com/bluenote-1577/sylph). GTDB appends suffixes like `_A`, `_B` to species names for subspecies-level genomic clusters. These suffixes are automatically stripped for display and matching.
+ATB uses [GTDB taxonomy](https://gtdb.ecogenomic.org/) via [Sylph](https://github.com/bluenote-1577/sylph). GTDB appends suffixes like `_A`, `_B` to species names for subspecies-level genomic clusters. These suffixes are automatically stripped for display and matching. GTDB placeholder species (e.g. `sp000746275`) are excluded from all outputs.
 
 ### Quality Filtering
 
@@ -134,7 +161,9 @@ ATB uses [GTDB taxonomy](https://gtdb.ecogenomic.org/) via [Sylph](https://githu
 
 ### Stratified Sampling
 
-Genomes are binned into a quantile-based 10x10 grid of GC content and genome size. Samples are drawn proportionally from each bin to ensure the selected subset represents the full genomic diversity of the species.
+**ATB mode**: Genomes are binned into a quantile-based 10x10 grid of contig N50 and genome size. Samples are drawn proportionally from each bin to ensure the selected subset represents the full assembly quality and size diversity.
+
+**RefSeq mode**: Since RefSeq genomes are typically single-contig, sampling uses genome size only (1D binning) rather than N50.
 
 ## Development
 
@@ -151,11 +180,11 @@ src/
   atbfetcher/         # ATB genome fetching
     cli.py            # Click CLI with subcommands
     metadata.py       # Download/cache metadata files
-    species.py        # Species name cleaning
+    species.py        # Species name cleaning & filtering
     quality.py        # Quality filtering
-    sampling.py       # Stratified sampling
-    plotting.py       # GC vs size plots
-    download.py       # Tarball download/extraction
+    sampling.py       # Stratified sampling (N50+size or size-only)
+    plotting.py       # N50 vs genome size plots
+    download.py       # Tarball download/extraction (multi-threaded XZ)
     mlst.py           # MLST-based selection
   refseqfetcher/      # RefSeq genome fetching
     cli.py            # RefSeq CLI

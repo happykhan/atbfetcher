@@ -11,6 +11,25 @@ import re
 import pandas as pd
 
 
+def is_placeholder_species(name: str) -> bool:
+    """Check if a species name is a GTDB unnamed placeholder.
+
+    GTDB assigns numeric placeholder names like ``sp000746275`` to unnamed
+    species. These are not useful for benchmarking and should be excluded.
+
+    Parameters
+    ----------
+    name : str
+        A species name to check.
+
+    Returns
+    -------
+    bool
+        True if the name looks like a GTDB placeholder (e.g. "Genus sp001234567").
+    """
+    return bool(re.search(r"\bsp\d{3,}", name))
+
+
 def clean_species_name(name: str) -> str:
     """Strip GTDB subspecies suffixes from a species name.
 
@@ -74,6 +93,8 @@ def list_species(species_calls_df: pd.DataFrame, raw: bool = False) -> list[str]
     """
     col = "species"
     names = species_calls_df[col].dropna().unique()
+    # Exclude GTDB placeholder species (e.g. "Genus sp000746275")
+    names = [n for n in names if not is_placeholder_species(n)]
 
     if not raw:
         names = sorted(set(clean_species_name(n) for n in names))
@@ -103,10 +124,16 @@ def get_samples_for_species(
     pd.DataFrame
         Filtered rows matching the species.
     """
+    if is_placeholder_species(name):
+        return species_calls_df.iloc[0:0].copy()
+
     cleaned_input = normalize_for_matching(name)
 
     mask = species_calls_df["species"].apply(
-        lambda x: normalize_for_matching(str(x)) == cleaned_input
+        lambda x: (
+            normalize_for_matching(str(x)) == cleaned_input
+            and not is_placeholder_species(str(x))
+        )
         if pd.notna(x)
         else False
     )

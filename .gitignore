@@ -42,13 +42,11 @@ test_mlst/
 test_acc/
 test_refseq/
 
-# Large data files (not bundled)
+# Large data files (too big for git, place in data/ locally)
 mlst_processed_all_samples.tsv.xz
 mlst_error_list.txt
 all_atb_files.tsv
 warning_pair_counts_by_species.tsv
-
-# Root-level duplicates of bundled data
 /Suspect_scheme_contaminations.csv
 
 # Plan files

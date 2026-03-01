@@ -1,8 +1,9 @@
-"""Stratified sampling of genomes by N50 and genome size.
+"""Stratified sampling of genomes by assembly metrics.
 
 Ensures the selected subset represents the full diversity of the
-species by sampling proportionally across a 2D grid of Contig_N50
-and Genome_Size quantile bins.
+species by sampling proportionally across quantile bins. For ATB data,
+bins on Contig_N50 and Genome_Size (2D grid). For RefSeq data (single
+contig), bins on Genome_Size only (1D).
 """
 
 import logging
@@ -14,28 +15,37 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_N_BINS = 10
 
+# Default stratification axes for ATB (N50 + genome size) and RefSeq (genome size only)
+ATB_COLUMNS = ("Contig_N50", "Genome_Size")
+REFSEQ_COLUMNS = ("Genome_Size",)
+
 
 def stratified_sample(
     df: pd.DataFrame,
     n: int,
     seed: int = 42,
     n_bins: int = DEFAULT_N_BINS,
+    columns: tuple[str, ...] = ATB_COLUMNS,
 ) -> pd.DataFrame:
-    """Select n genomes using stratified sampling over N50 and genome size.
+    """Select n genomes using stratified sampling over one or more metrics.
 
-    Bins genomes into a quantile-based grid (default 10x10) of Contig_N50
-    and Genome_Size, then samples proportionally from each bin.
+    Bins genomes into quantile bins along the given columns, then samples
+    proportionally from each bin. Use ``ATB_COLUMNS`` (default) for N50 +
+    genome size, or ``REFSEQ_COLUMNS`` for genome size only.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Quality-filtered genomes. Must have ``Contig_N50`` and ``Genome_Size``.
+        Quality-filtered genomes. Must have the columns listed in ``columns``.
     n : int
         Number of genomes to select.
     seed : int
         Random seed for reproducibility.
     n_bins : int
         Number of quantile bins per axis.
+    columns : tuple[str, ...]
+        Column names to stratify on. Default is ``("Contig_N50", "Genome_Size")``.
+        For RefSeq, use ``("Genome_Size",)``.
 
     Returns
     -------
@@ -52,17 +62,18 @@ def stratified_sample(
 
     rng = np.random.default_rng(seed)
 
-    # Create quantile-based bins for N50 and genome size
+    # Create quantile-based bins for each stratification column
     df = df.copy()
-    df["n50_bin"] = pd.qcut(
-        df["Contig_N50"], q=n_bins, labels=False, duplicates="drop"
-    )
-    df["size_bin"] = pd.qcut(
-        df["Genome_Size"], q=n_bins, labels=False, duplicates="drop"
-    )
+    bin_col_names = []
+    for col in columns:
+        bin_name = f"_bin_{col}"
+        bin_col_names.append(bin_name)
+        df[bin_name] = pd.qcut(
+            df[col], q=n_bins, labels=False, duplicates="drop"
+        )
 
-    # Group by the 2D grid
-    grouped = df.groupby(["n50_bin", "size_bin"], observed=True)
+    # Group by the bin grid (1D or 2D depending on columns)
+    grouped = df.groupby(bin_col_names, observed=True)
     bin_counts = grouped.size()
     total = bin_counts.sum()
 
@@ -108,14 +119,16 @@ def stratified_sample(
     # Sample from each bin
     selected_parts = []
     for bin_key, alloc in allocations.items():
-        bin_df = grouped.get_group(bin_key)
+        # get_group needs a tuple for multi-column groupby, scalar for single
+        group_key = (bin_key,) if not isinstance(bin_key, tuple) else bin_key
+        bin_df = grouped.get_group(group_key)
         indices = rng.choice(len(bin_df), size=alloc, replace=False)
         selected_parts.append(bin_df.iloc[indices])
 
     result = pd.concat(selected_parts, ignore_index=True)
 
     # Drop temporary bin columns
-    result = result.drop(columns=["n50_bin", "size_bin"], errors="ignore")
+    result = result.drop(columns=bin_col_names, errors="ignore")
 
     logger.info(
         "Stratified sampling: selected %d from %d genomes across %d bins",

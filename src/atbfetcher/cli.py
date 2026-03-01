@@ -22,7 +22,12 @@ from atbfetcher.mlst import filter_by_mlst, load_suspect_contaminations
 from atbfetcher.plotting import plot_selection
 from atbfetcher.quality import filter_by_quality
 from atbfetcher.sampling import stratified_sample
-from atbfetcher.species import get_samples_for_species, list_species
+from atbfetcher.species import (
+    clean_species_name,
+    get_samples_for_species,
+    is_placeholder_species,
+    list_species,
+)
 
 
 def _setup_logging(verbose: bool = False) -> None:
@@ -201,11 +206,15 @@ def mlst(species_name, scheme, output, n, seed, threads, cache_dir, no_cache, re
         sys.exit(1)
 
     click.echo("Loading MLST data...")
-    mlst_path = cache_dir / "mlst_processed_all_samples.tsv.xz"
+    # Look in bundled data/ first, then fall back to cache directory
+    data_dir = Path(__file__).resolve().parent.parent.parent / "data"
+    mlst_path = data_dir / "mlst_processed_all_samples.tsv.xz"
+    if not mlst_path.exists():
+        mlst_path = cache_dir / "mlst_processed_all_samples.tsv.xz"
     if not mlst_path.exists():
         click.echo(
-            f"MLST data not found at {mlst_path}. "
-            "Please place mlst_processed_all_samples.tsv.xz in your cache directory.",
+            "MLST data not found. Place mlst_processed_all_samples.tsv.xz "
+            f"in {data_dir} or {cache_dir}.",
             err=True,
         )
         sys.exit(1)
@@ -277,18 +286,37 @@ def accessions(accessions_file, output, threads, cache_dir, no_cache, refresh, v
 @main.command("list-species")
 @click.option("--raw", is_flag=True, default=False,
               help="Print original GTDB names without cleaning.")
+@click.option("--count", is_flag=True, default=False,
+              help="Show genome count per species, ordered by count (highest first).")
 @cache_options
 @verbose_option
-def list_species_cmd(raw, cache_dir, no_cache, refresh, verbose):
+def list_species_cmd(raw, count, cache_dir, no_cache, refresh, verbose):
     """List all available species in AllTheBacteria."""
     _setup_logging(verbose)
 
     cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
     species_calls_df = cache.load_species_calls()
 
-    names = list_species(species_calls_df, raw=raw)
-    for name in names:
-        click.echo(name)
+    if count:
+        # Exclude placeholders then count, ordered highest to lowest
+        named = species_calls_df[
+            species_calls_df["species"].apply(
+                lambda x: pd.notna(x) and not is_placeholder_species(str(x))
+            )
+        ]
+        if not raw:
+            named = named.copy()
+            named["species"] = named["species"].apply(
+                lambda x: clean_species_name(str(x))
+            )
+        counts = named["species"].value_counts().reset_index()
+        counts.columns = ["species", "count"]
+        for _, row in counts.iterrows():
+            click.echo(f"{row['count']:>10,}  {row['species']}")
+    else:
+        names = list_species(species_calls_df, raw=raw)
+        for name in names:
+            click.echo(name)
 
 
 # -- species-count subcommand --
@@ -305,9 +333,14 @@ def species_count(top, cache_dir, no_cache, refresh, verbose):
     cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
     species_calls_df = cache.load_species_calls()
 
+    # Exclude GTDB placeholder species (e.g. "Genus sp000746275")
+    named = species_calls_df[
+        species_calls_df["species"].apply(
+            lambda x: pd.notna(x) and not is_placeholder_species(str(x))
+        )
+    ]
     counts = (
-        species_calls_df["species"]
-        .dropna()
+        named["species"]
         .value_counts()
         .reset_index()
     )
