@@ -42,6 +42,10 @@ class TestCleanSpeciesName:
         assert clean_species_name("Klebsiella variicola_B") == "Klebsiella variicola"
         assert clean_species_name("Citrobacter freundii_C") == "Citrobacter freundii"
 
+    def test_strips_genus_level_suffix(self):
+        assert clean_species_name("Campylobacter_D jejuni") == "Campylobacter jejuni"
+        assert clean_species_name("Clostridium_B difficile") == "Clostridium difficile"
+
     def test_no_suffix_unchanged(self):
         assert clean_species_name("Escherichia coli") == "Escherichia coli"
 

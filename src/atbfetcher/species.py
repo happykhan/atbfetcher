@@ -51,10 +51,12 @@ def clean_species_name(name: str) -> str:
     --------
     >>> clean_species_name("Enterobacter hormaechei_A")
     'Enterobacter hormaechei'
+    >>> clean_species_name("Campylobacter_D jejuni")
+    'Campylobacter jejuni'
     >>> clean_species_name("Escherichia coli")
     'Escherichia coli'
     """
-    return re.sub(r"_[A-Z]$", "", name)
+    return re.sub(r"_[A-Z]\b", "", name)
 
 
 def normalize_for_matching(name: str) -> str:
