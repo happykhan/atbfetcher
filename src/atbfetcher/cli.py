@@ -41,6 +41,29 @@ def _setup_logging(verbose: bool = False) -> None:
     )
 
 
+# -- Summary table --
+
+# Assembly stat columns to include in the summary TSV
+_ASSEMBLY_STATS = [
+    "sample", "species", "Completeness_Specific", "Contamination",
+    "Genome_Size", "GC_Content", "Contig_N50",
+]
+
+# Extra MLST columns when available
+_MLST_COLS = ["mlst_scheme", "mlst_st", "mlst_status"]
+
+
+def _write_summary(selected_df: pd.DataFrame, output_dir: Path, species_name: str) -> Path:
+    """Write a TSV summary of selected genomes to the output directory."""
+    cols = [c for c in _ASSEMBLY_STATS + _MLST_COLS if c in selected_df.columns]
+    summary = selected_df[cols].copy()
+    safe_name = species_name.replace(" ", "_")
+    summary_path = output_dir / f"{safe_name}_summary.tsv"
+    summary.to_csv(summary_path, sep="\t", index=False)
+    click.echo(f"  Summary table saved to {summary_path}")
+    return summary_path
+
+
 # -- Shared CLI options --
 
 def cache_options(func):
@@ -146,6 +169,9 @@ def species(species_name, output, n, seed, threads, cache_dir, no_cache, refresh
     selected_df = stratified_sample(hq_df, n=n, seed=seed)
     click.echo(f"  Selected {len(selected_df)} genomes")
 
+    output.mkdir(parents=True, exist_ok=True)
+    _write_summary(selected_df, output, species_name)
+
     click.echo("Generating selection plot...")
     plot_selection(hq_df, selected_df, output, species_name)
 
@@ -232,6 +258,9 @@ def mlst(species_name, scheme, output, n, seed, threads, cache_dir, no_cache, re
     if selected_df.empty:
         click.echo("No genomes selected by MLST criteria.", err=True)
         sys.exit(1)
+
+    output.mkdir(parents=True, exist_ok=True)
+    _write_summary(selected_df, output, species_name)
 
     click.echo("Generating selection plot...")
     plot_selection(hq_df, selected_df, output, species_name)
