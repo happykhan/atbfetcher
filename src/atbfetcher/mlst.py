@@ -140,7 +140,7 @@ def filter_by_mlst(
     selects one genome per ST (preferring highest completeness). If
     n < unique STs, randomly samples n STs and picks one genome each.
 
-    Novel STs (st == "-") are included proportionally.
+    Genomes with unresolved STs (novel or unknown, st == "-") are excluded.
 
     Parameters
     ----------
@@ -193,52 +193,35 @@ def filter_by_mlst(
             if "species" in quality_filtered_df.columns else ""
         scheme_df = _remove_suspect_combinations(scheme_df, species_name, suspect_df)
 
-    # Split into known STs and novel STs
-    known_st = scheme_df[scheme_df["mlst_st"] != "-"]
-    novel_st = scheme_df[scheme_df["mlst_st"] == "-"]
+    # Exclude novel/unknown STs (st == "-")
+    resolved = scheme_df[scheme_df["mlst_st"] != "-"]
+    n_excluded = len(scheme_df) - len(resolved)
+    if n_excluded > 0:
+        logger.info("Excluded %d samples with unresolved STs", n_excluded)
 
-    unique_sts = known_st["mlst_st"].unique()
+    unique_sts = resolved["mlst_st"].unique()
     n_unique = len(unique_sts)
 
-    # Calculate how many novel STs to include proportionally
-    total_with_novel = len(known_st) + len(novel_st)
-    novel_proportion = len(novel_st) / total_with_novel if total_with_novel > 0 else 0
-    n_novel = max(0, int(round(n * novel_proportion)))
-    n_known = n - n_novel
-
-    logger.info(
-        "Unique STs: %d, novel: %d, allocating %d known + %d novel",
-        n_unique,
-        len(novel_st),
-        n_known,
-        n_novel,
-    )
+    logger.info("Unique resolved STs: %d, selecting up to %d", n_unique, n)
 
     selected_parts = []
 
-    # Select from known STs
-    if n_known > 0 and n_unique > 0:
-        if n_known >= n_unique:
+    if n_unique > 0:
+        if n >= n_unique:
             # One genome per ST — prefer highest completeness
             sts_to_use = unique_sts
         else:
             # Random subset of STs
-            indices = rng.choice(n_unique, size=n_known, replace=False)
+            indices = rng.choice(n_unique, size=n, replace=False)
             sts_to_use = unique_sts[indices]
 
         for st in sts_to_use:
-            st_samples = known_st[known_st["mlst_st"] == st]
+            st_samples = resolved[resolved["mlst_st"] == st]
             if "Completeness_Specific" in st_samples.columns:
                 best = st_samples.sort_values("Completeness_Specific", ascending=False).iloc[0]
             else:
                 best = st_samples.iloc[0]
             selected_parts.append(best)
-
-    # Select from novel STs
-    if n_novel > 0 and len(novel_st) > 0:
-        n_novel_actual = min(n_novel, len(novel_st))
-        indices = rng.choice(len(novel_st), size=n_novel_actual, replace=False)
-        selected_parts.extend(novel_st.iloc[idx] for idx in indices)
 
     if not selected_parts:
         return scheme_df.head(0)

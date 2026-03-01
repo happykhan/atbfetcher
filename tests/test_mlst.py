@@ -55,7 +55,7 @@ class TestFilterByMlst:
         })
 
     def test_one_per_st(self, sample_mlst_df):
-        """Should select one genome per ST."""
+        """Should select one genome per resolved ST, excluding novel."""
         quality_df = self._make_quality_df()
         result = filter_by_mlst(
             quality_df,
@@ -64,9 +64,9 @@ class TestFilterByMlst:
             n=10,
             seed=42,
         )
-        # There are 2 known STs (10, 131) + 1 novel (-) = 3 samples
-        assert len(result) <= 3
-        assert len(result) > 0
+        # 2 resolved STs (10, 131); novel ST ("-") excluded
+        assert len(result) == 2
+        assert "-" not in result["mlst_st"].values
 
     def test_n_less_than_sts(self, sample_mlst_df):
         """When n < unique STs, should sample a subset of STs."""
@@ -110,6 +110,18 @@ class TestFilterByMlst:
             seed=42,
         )
         assert len(result) > 0
+
+    def test_excludes_novel_sts(self, sample_mlst_df):
+        """Genomes with unresolved STs (st == '-') should be excluded."""
+        quality_df = self._make_quality_df()
+        result = filter_by_mlst(
+            quality_df,
+            sample_mlst_df,
+            scheme="ecoli_achtman_4",
+            n=10,
+            seed=42,
+        )
+        assert "-" not in result["mlst_st"].values
 
     def test_empty_quality_df(self, sample_mlst_df):
         """Empty quality DataFrame should return empty result."""
