@@ -1,0 +1,55 @@
+﻿Suspect_MLST,Species_clash_with
+aeromonas(2363),Escherichia coli
+aeromonas(2364),Klebsiella pneumoniae
+aeromonas(2369),Escherichia coli
+aeromonas(2372),Klebsiella pneumoniae
+aeromonas(2374),Klebsiella quasipneumoniae
+cfreundii(1049),Escherichia coli
+cfreundii(1063),Escherichia coli
+cfreundii(1069),Escherichia coli
+cronobacter(339),Enterobacter hormaechei_A
+cronobacter(340),Enterobacter kobei
+cronobacter(415),Enterobacter hormaechei_A
+cronobacter(416),Enterobacter hormaechei_A
+cronobacter(417),Enterobacter hormaechei_A
+cronobacter(418),Enterobacter hormaechei_A
+cronobacter(419),Enterobacter hormaechei_A
+cronobacter(420),Enterobacter hormaechei_A
+cronobacter(421),Enterobacter hormaechei_A
+cronobacter(422),Enterobacter hormaechei_A
+cronobacter(424),Enterobacter ludwigii
+cronobacter(426),Enterobacter soli
+cronobacter(427),Enterobacter cloacae
+cronobacter(428),Enterobacter hormaechei
+cronobacter(604),Enterobacter hormaechei_A
+cronobacter(731),Klebsiella aerogenes
+cronobacter(732),Enterobacter hormaechei_A
+cronobacter(760),Enterobacter hormaechei_A
+cronobacter(797),Enterobacter roggenkampii
+cronobacter(817),Enterobacter hormaechei_A
+cronobacter(818),Enterobacter hormaechei_A
+ecoli_achtman_4(102),Salmonella enterica
+ecoli_achtman_4(11059),Klebsiella pneumoniae
+ecoli_achtman_4(11307),Klebsiella pneumoniae
+ecoli_achtman_4(14464),Klebsiella pneumoniae
+ecoli_achtman_4(5084),Salmonella enterica
+ecoli_achtman_4(6172),Citrobacter freundii
+ecoli_achtman_4(7362),Klebsiella pneumoniae
+ecoli_achtman_4(7499),Citrobacter freundii
+ecoli_achtman_4(8785),Citrobacter portucalensis
+ecoli_achtman_4(9187),Salmonella enterica
+salmonella(2998),Escherichia coli
+salmonella(3005),Escherichia coli
+salmonella(3007),Escherichia coli
+salmonella(3011),Enterobacter hormaechei_A
+salmonella(3514),Escherichia coli
+salmonella(3529),Escherichia coli
+salmonella(7101),Citrobacter freundii
+salmonella(7953),Escherichia coli
+,
+,
+,
+,
+,
+,
+,

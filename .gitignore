@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pixi
+.pixi/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Cache
+*.parquet
+
+# Test output directories
+test_saureus_mlst/
+test_ecoli/
+test_mlst/
+test_acc/
+test_refseq/
+
+# Large data files (not bundled)
+mlst_processed_all_samples.tsv.xz
+mlst_error_list.txt
+all_atb_files.tsv
+warning_pair_counts_by_species.tsv
+
+# Root-level duplicates of bundled data
+/Suspect_scheme_contaminations.csv
+
+# Plan files
+plan.md
