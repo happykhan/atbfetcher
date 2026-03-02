@@ -5,9 +5,9 @@ from OSF on first use and cached locally as Parquet files for fast reloading.
 """
 
 import gzip
-import hashlib
 import io
 import logging
+import lzma
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +22,8 @@ URLS = {
     "species_calls": "https://osf.io/download/699f15825f818865268accd2/",
     "checkm2": "https://osf.io/download/699f158c37ec474686e2c7d1/",
 }
+
+MLST_URL = "https://pub-e661bf7ded744bd79c156d3a4f4323ef.r2.dev/mlst_processed_all_samples.tsv.xz"
 
 QUALIBACT_URL = "https://static.qualibact.org/static/summary/filtered_metrics.csv"
 
@@ -128,14 +130,67 @@ class MetadataCache:
         df = self._load_or_download("species_calls", URLS["species_calls"])
 
         # Normalize column names for internal consistency
-        df = df.rename(columns={
-            "sample_accession": "sample",
-            "sylph_species": "species",
-        })
+        df = df.rename(
+            columns={
+                "sample_accession": "sample",
+                "sylph_species": "species",
+            }
+        )
 
         # Keep only high-quality Sylph calls
         if hq_only and "HQ" in df.columns:
             df = df[df["HQ"] == "T"].copy()
+
+        return df
+
+    def _download_xz_tsv(self, url: str, name: str) -> pd.DataFrame:
+        """Download an XZ-compressed TSV from a URL and return as a DataFrame.
+
+        Shows a progress bar during download using tqdm.
+        """
+        logger.info("Downloading %s from %s", name, url)
+        response = requests.get(url, stream=True, timeout=300)
+        response.raise_for_status()
+
+        total_size = int(response.headers.get("content-length", 0))
+        chunks = []
+        with tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            desc=f"Downloading {name}",
+            disable=total_size == 0,
+        ) as pbar:
+            for chunk in response.iter_content(chunk_size=8192):
+                chunks.append(chunk)
+                pbar.update(len(chunk))
+
+        raw_bytes = b"".join(chunks)
+        decompressed = lzma.decompress(raw_bytes)
+        return pd.read_csv(io.BytesIO(decompressed), sep="\t", low_memory=False)
+
+    def load_mlst(self) -> pd.DataFrame:
+        """Load MLST typing results for all ATB samples.
+
+        Downloads the XZ-compressed TSV from Cloudflare R2 on first use
+        and caches as Parquet for fast subsequent loads.
+
+        Columns include: sample, mlst_scheme, mlst_st, mlst_status.
+        """
+        parquet_path = self._parquet_path("mlst")
+
+        # Use cache if available and not refreshing
+        if parquet_path.exists() and not self.refresh and not self.no_cache:
+            logger.info("Loading cached MLST data from %s", parquet_path)
+            return pd.read_parquet(parquet_path)
+
+        # Download fresh
+        df = self._download_xz_tsv(MLST_URL, "MLST data")
+
+        # Save to cache (unless no_cache mode)
+        if not self.no_cache:
+            df.to_parquet(parquet_path, index=False)
+            logger.info("Cached MLST data to %s", parquet_path)
 
         return df
 

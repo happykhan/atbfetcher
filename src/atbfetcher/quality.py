@@ -26,9 +26,7 @@ CHECKM2_TO_QUALIBACT = {
 }
 
 
-def _find_qualibact_match(
-    species_name: str, qualibact_cutoffs: dict
-) -> dict | None:
+def _find_qualibact_match(species_name: str, qualibact_cutoffs: dict) -> dict | None:
     """Find matching Qualibact cutoffs for a species name.
 
     Normalizes both the query name and Qualibact species names for matching,
@@ -112,9 +110,7 @@ def filter_by_quality(
     return merged
 
 
-def _apply_qualibact_cutoffs(
-    df: pd.DataFrame, cutoffs: dict
-) -> pd.DataFrame:
+def _apply_qualibact_cutoffs(df: pd.DataFrame, cutoffs: dict) -> pd.DataFrame:
     """Apply Qualibact metric cutoffs to a DataFrame.
 
     For each metric in the cutoffs dict, filters rows where the corresponding
@@ -137,8 +133,6 @@ def _apply_qualibact_cutoffs(
             result = result[result[checkm2_col] <= upper]
         else:
             # Apply both bounds
-            result = result[
-                (result[checkm2_col] >= lower) & (result[checkm2_col] <= upper)
-            ]
+            result = result[(result[checkm2_col] >= lower) & (result[checkm2_col] <= upper)]
 
     return result

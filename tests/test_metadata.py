@@ -1,10 +1,8 @@
 """Tests for metadata caching logic."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
 from atbfetcher.metadata import MetadataCache, load_qualibact_cutoffs
 
@@ -15,12 +13,12 @@ class TestMetadataCache:
     def test_creates_cache_directory(self, tmp_path):
         """Cache directory should be created on initialization."""
         cache_dir = tmp_path / "new_cache"
-        cache = MetadataCache(cache_dir=cache_dir)
+        MetadataCache(cache_dir=cache_dir)
         assert cache_dir.exists()
 
     def test_stores_and_reloads_parquet(self, tmp_cache_dir):
         """Data should persist as parquet and reload correctly."""
-        cache = MetadataCache(cache_dir=tmp_cache_dir)
+        MetadataCache(cache_dir=tmp_cache_dir)
 
         # Manually write a parquet file to simulate a cached download
         test_df = pd.DataFrame({"sample": ["S1", "S2"], "value": [1, 2]})

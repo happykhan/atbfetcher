@@ -68,9 +68,7 @@ def stratified_sample(
     for col in columns:
         bin_name = f"_bin_{col}"
         bin_col_names.append(bin_name)
-        df[bin_name] = pd.qcut(
-            df[col], q=n_bins, labels=False, duplicates="drop"
-        )
+        df[bin_name] = pd.qcut(df[col], q=n_bins, labels=False, duplicates="drop")
 
     # Group by the bin grid (1D or 2D depending on columns)
     grouped = df.groupby(bin_col_names, observed=True)

@@ -25,9 +25,9 @@ DEFAULT_THREADS = max(1, os.cpu_count() - 1) if os.cpu_count() else 1
 AWS_BASE_URL = "https://allthebacteria-assemblies.s3.eu-west-2.amazonaws.com"
 
 # Empirical timing constants (seconds), measured on typical connections
-_AWS_PER_FILE_SECS = 0.4       # avg time to download one .fa.gz from AWS (~800KB)
+_AWS_PER_FILE_SECS = 0.4  # avg time to download one .fa.gz from AWS (~800KB)
 _TARBALL_DOWNLOAD_SECS = 60.0  # avg time to download one ~3GB tarball (uncached)
-_TARBALL_EXTRACT_SECS = 25.0   # avg time to decompress + scan one tarball
+_TARBALL_EXTRACT_SECS = 25.0  # avg time to decompress + scan one tarball
 
 
 def estimate_download_time(
@@ -57,9 +57,7 @@ def estimate_download_time(
     return method, aws_time, tarball_time
 
 
-def resolve_tarballs(
-    sample_ids: list[str], file_list_df: pd.DataFrame
-) -> dict[str, list[dict]]:
+def resolve_tarballs(sample_ids: list[str], file_list_df: pd.DataFrame) -> dict[str, list[dict]]:
     """Map sample IDs to their containing tarballs.
 
     Groups samples by tarball so each archive is downloaded only once.
@@ -150,10 +148,7 @@ def download_tarball(url: str, dest: Path, md5: str | None = None) -> Path:
 
     if md5 and hasher.hexdigest() != md5:
         dest.unlink()
-        raise ValueError(
-            f"MD5 mismatch for {dest.name}: "
-            f"expected {md5}, got {hasher.hexdigest()}"
-        )
+        raise ValueError(f"MD5 mismatch for {dest.name}: expected {md5}, got {hasher.hexdigest()}")
 
     return dest
 
@@ -325,10 +320,7 @@ def fetch_from_aws(
 
     downloaded = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_download_one_aws, sid, output_dir): sid
-            for sid in sample_ids
-        }
+        futures = {executor.submit(_download_one_aws, sid, output_dir): sid for sid in sample_ids}
         with tqdm(total=len(sample_ids), desc="AWS downloads", unit="file") as pbar:
             for future in as_completed(futures):
                 result = future.result()

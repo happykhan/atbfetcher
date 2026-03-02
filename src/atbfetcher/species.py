@@ -106,9 +106,7 @@ def list_species(species_calls_df: pd.DataFrame, raw: bool = False) -> list[str]
     return names
 
 
-def get_samples_for_species(
-    name: str, species_calls_df: pd.DataFrame
-) -> pd.DataFrame:
+def get_samples_for_species(name: str, species_calls_df: pd.DataFrame) -> pd.DataFrame:
     """Get all sample IDs assigned to a species.
 
     Matches against both the raw GTDB name and the cleaned name,
@@ -133,10 +131,9 @@ def get_samples_for_species(
 
     mask = species_calls_df["species"].apply(
         lambda x: (
-            normalize_for_matching(str(x)) == cleaned_input
-            and not is_placeholder_species(str(x))
+            (normalize_for_matching(str(x)) == cleaned_input and not is_placeholder_species(str(x)))
+            if pd.notna(x)
+            else False
         )
-        if pd.notna(x)
-        else False
     )
     return species_calls_df[mask].copy()

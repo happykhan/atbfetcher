@@ -36,11 +36,7 @@ htmlcov/
 *.parquet
 
 # Test output directories
-test_saureus_mlst/
-test_ecoli/
-test_mlst/
-test_acc/
-test_refseq/
+test_*/
 
 # Large data files (too big for git, place in data/ locally)
 mlst_processed_all_samples.tsv.xz

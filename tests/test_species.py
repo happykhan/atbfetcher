@@ -1,7 +1,5 @@
 """Tests for species name handling."""
 
-import pandas as pd
-
 from atbfetcher.species import (
     clean_species_name,
     get_samples_for_species,
@@ -108,9 +106,7 @@ class TestGetSamplesForSpecies:
 
     def test_matches_cleaned_name(self, sample_species_calls_df):
         # Searching for "Enterobacter hormaechei" should match "_A" suffixed entries
-        result = get_samples_for_species(
-            "Enterobacter hormaechei", sample_species_calls_df
-        )
+        result = get_samples_for_species("Enterobacter hormaechei", sample_species_calls_df)
         assert len(result) == 2
         assert set(result["sample"]) == {"SAMN003", "SAMN004"}
 

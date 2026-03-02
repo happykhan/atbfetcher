@@ -52,13 +52,12 @@ def _run_datasets_command(args: list[str]) -> str:
             timeout=300,
         )
         return result.stdout
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise click.ClickException(
-            "NCBI 'datasets' CLI not found. "
-            "Install it with: pixi add ncbi-datasets-cli"
-        )
-    except subprocess.CalledProcessError as e:
-        raise click.ClickException(f"datasets command failed: {e.stderr}")
+            "NCBI 'datasets' CLI not found. Install it with: pixi add ncbi-datasets-cli"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"datasets command failed: {exc.stderr}") from exc
 
 
 def _get_refseq_metadata(taxon: str) -> pd.DataFrame:
@@ -67,11 +66,17 @@ def _get_refseq_metadata(taxon: str) -> pd.DataFrame:
     Returns a DataFrame with columns: accession, GC_Content, Genome_Size,
     Completeness, Contamination, contig_count.
     """
-    output = _run_datasets_command([
-        "summary", "genome", "taxon", taxon,
-        "--assembly-source", "refseq",
-        "--as-json-lines",
-    ])
+    output = _run_datasets_command(
+        [
+            "summary",
+            "genome",
+            "taxon",
+            taxon,
+            "--assembly-source",
+            "refseq",
+            "--as-json-lines",
+        ]
+    )
 
     records = []
     for line in output.strip().splitlines():
@@ -88,16 +93,18 @@ def _get_refseq_metadata(taxon: str) -> pd.DataFrame:
         info = data.get("assembly_info", {})
         checkm = info.get("checkm_info", {})
 
-        records.append({
-            "sample": accession,
-            "Name": accession,
-            "accession": accession,
-            "GC_Content": stats.get("gc_percent", None),
-            "Genome_Size": stats.get("total_sequence_length", None),
-            "Completeness": checkm.get("completeness", 100.0),
-            "Contamination": checkm.get("contamination", 0.0),
-            "contig_count": stats.get("number_of_contigs", None),
-        })
+        records.append(
+            {
+                "sample": accession,
+                "Name": accession,
+                "accession": accession,
+                "GC_Content": stats.get("gc_percent", None),
+                "Genome_Size": stats.get("total_sequence_length", None),
+                "Completeness": checkm.get("completeness", 100.0),
+                "Contamination": checkm.get("contamination", 0.0),
+                "contig_count": stats.get("number_of_contigs", None),
+            }
+        )
 
     df = pd.DataFrame(records)
     logger.info("Found %d RefSeq assemblies for %s", len(df), taxon)
@@ -124,14 +131,22 @@ def _download_accessions(accessions: list[str], output_dir: Path) -> list[Path]:
 
     # Download using datasets CLI
     acc_str = ",".join(accessions)
-    _run_datasets_command([
-        "download", "genome", "accession", acc_str,
-        "--include", "genome",
-        "--filename", str(zip_path),
-    ])
+    _run_datasets_command(
+        [
+            "download",
+            "genome",
+            "accession",
+            acc_str,
+            "--include",
+            "genome",
+            "--filename",
+            str(zip_path),
+        ]
+    )
 
     # Unzip
     import zipfile
+
     extracted = []
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
@@ -147,6 +162,7 @@ def _download_accessions(accessions: list[str], output_dir: Path) -> list[Path]:
 
 # -- Main CLI group --
 
+
 @click.group()
 @click.version_option(package_name="atbfetcher")
 def main():
@@ -155,16 +171,19 @@ def main():
 
 # -- species subcommand --
 
+
 @main.command()
 @click.argument("species_name")
-@click.option("--output", "-o", required=True, type=click.Path(path_type=Path),
-              help="Output directory for downloaded assemblies.")
-@click.option("--n", "-n", default=1000, show_default=True,
-              help="Number of genomes to select.")
-@click.option("--seed", default=42, show_default=True,
-              help="Random seed for reproducibility.")
-@click.option("--verbose", "-v", is_flag=True, default=False,
-              help="Enable verbose logging.")
+@click.option(
+    "--output",
+    "-o",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output directory for downloaded assemblies.",
+)
+@click.option("--n", "-n", default=1000, show_default=True, help="Number of genomes to select.")
+@click.option("--seed", default=42, show_default=True, help="Random seed for reproducibility.")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose logging.")
 def species(species_name, output, n, seed, verbose):
     """Fetch a stratified subsample of RefSeq genomes for a species.
 
@@ -216,12 +235,17 @@ def species(species_name, output, n, seed, verbose):
 
 # -- accessions subcommand --
 
+
 @main.command()
 @click.argument("accessions_file", type=click.Path(exists=True, path_type=Path))
-@click.option("--output", "-o", required=True, type=click.Path(path_type=Path),
-              help="Output directory for downloaded assemblies.")
-@click.option("--verbose", "-v", is_flag=True, default=False,
-              help="Enable verbose logging.")
+@click.option(
+    "--output",
+    "-o",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output directory for downloaded assemblies.",
+)
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose logging.")
 def accessions(accessions_file, output, verbose):
     """Fetch RefSeq assemblies for a list of accessions.
 
@@ -249,8 +273,7 @@ def accessions(accessions_file, output, verbose):
 
 @main.command("list-accessions")
 @click.argument("species_name")
-@click.option("--verbose", "-v", is_flag=True, default=False,
-              help="Enable verbose logging.")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose logging.")
 def list_accessions(species_name, verbose):
     """List all RefSeq accessions for a species."""
     _setup_logging(verbose)

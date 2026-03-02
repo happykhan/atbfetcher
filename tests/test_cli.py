@@ -1,8 +1,5 @@
 """Tests for the CLI interface."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 from click.testing import CliRunner
 
@@ -51,9 +48,9 @@ class TestCLI:
 
     def test_accessions_missing_file(self, runner):
         """Should error when accessions file doesn't exist."""
-        result = runner.invoke(main, [
-            "accessions", "/nonexistent/file.txt", "--output", "/tmp/out"
-        ])
+        result = runner.invoke(
+            main, ["accessions", "/nonexistent/file.txt", "--output", "/tmp/out"]
+        )
         assert result.exit_code != 0
 
     def test_version(self, runner):

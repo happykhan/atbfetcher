@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from atbfetcher.sampling import REFSEQ_COLUMNS, stratified_sample
 
@@ -10,12 +9,14 @@ from atbfetcher.sampling import REFSEQ_COLUMNS, stratified_sample
 def _make_large_df(n: int = 500, seed: int = 0) -> pd.DataFrame:
     """Create a synthetic DataFrame for sampling tests."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "sample": [f"SAMN{i:06d}" for i in range(n)],
-        "Contig_N50": rng.lognormal(mean=11, sigma=1.5, size=n).astype(int),
-        "Genome_Size": rng.normal(5_000_000, 500_000, n).astype(int),
-        "Completeness_Specific": rng.uniform(95, 100, n),
-    })
+    return pd.DataFrame(
+        {
+            "sample": [f"SAMN{i:06d}" for i in range(n)],
+            "Contig_N50": rng.lognormal(mean=11, sigma=1.5, size=n).astype(int),
+            "Genome_Size": rng.normal(5_000_000, 500_000, n).astype(int),
+            "Completeness_Specific": rng.uniform(95, 100, n),
+        }
+    )
 
 
 class TestStratifiedSample:
@@ -45,7 +46,7 @@ class TestStratifiedSample:
         df = _make_large_df(500)
         result1 = stratified_sample(df, n=100, seed=42)
         result2 = stratified_sample(df, n=100, seed=99)
-        assert not result1["sample"].tolist() == result2["sample"].tolist()
+        assert result1["sample"].tolist() != result2["sample"].tolist()
 
     def test_covers_n50_range(self):
         """Selected samples should span the N50 range well."""

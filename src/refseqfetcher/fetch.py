@@ -7,7 +7,6 @@ programmatic access to RefSeq genome data.
 import json
 import logging
 import subprocess
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +40,12 @@ def run_datasets(args: list[str], timeout: int = 300) -> str:
             timeout=timeout,
         )
         return result.stdout
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise RuntimeError(
-            "NCBI 'datasets' CLI not found. "
-            "Install via pixi: pixi add ncbi-datasets-cli"
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"datasets command failed: {e.stderr}")
+            "NCBI 'datasets' CLI not found. Install via pixi: pixi add ncbi-datasets-cli"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"datasets command failed: {exc.stderr}") from exc
 
 
 def get_assembly_summary(taxon: str) -> list[dict]:
@@ -63,11 +61,17 @@ def get_assembly_summary(taxon: str) -> list[dict]:
     list[dict]
         List of assembly records from NCBI datasets.
     """
-    output = run_datasets([
-        "summary", "genome", "taxon", taxon,
-        "--assembly-source", "refseq",
-        "--as-json-lines",
-    ])
+    output = run_datasets(
+        [
+            "summary",
+            "genome",
+            "taxon",
+            taxon,
+            "--assembly-source",
+            "refseq",
+            "--as-json-lines",
+        ]
+    )
 
     records = []
     for line in output.strip().splitlines():

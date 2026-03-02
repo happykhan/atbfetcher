@@ -36,9 +36,7 @@ def load_suspect_contaminations(path: Path | None = None) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def auto_detect_scheme(
-    mlst_df: pd.DataFrame, sample_ids: list[str]
-) -> str | None:
+def auto_detect_scheme(mlst_df: pd.DataFrame, sample_ids: list[str]) -> str | None:
     """Detect the most common MLST scheme for a set of samples.
 
     Parameters
@@ -53,9 +51,7 @@ def auto_detect_scheme(
     str or None
         Most common scheme name, or None if no schemes found.
     """
-    matched = mlst_df[
-        (mlst_df["sample"].isin(sample_ids)) & (mlst_df["mlst_scheme"] != "-")
-    ]
+    matched = mlst_df[(mlst_df["sample"].isin(sample_ids)) & (mlst_df["mlst_scheme"] != "-")]
     if matched.empty:
         return None
 
@@ -113,8 +109,7 @@ def _remove_suspect_combinations(
 
     initial = len(df)
     mask = df.apply(
-        lambda row: (str(row["mlst_scheme"]), str(row["mlst_st"]))
-        not in suspect_scheme_st,
+        lambda row: (str(row["mlst_scheme"]), str(row["mlst_st"])) not in suspect_scheme_st,
         axis=1,
     )
     result = df[mask]
@@ -189,8 +184,11 @@ def filter_by_mlst(
 
     # Remove suspect combinations
     if suspect_df is not None:
-        species_name = quality_filtered_df.get("species", pd.Series()).iloc[0] \
-            if "species" in quality_filtered_df.columns else ""
+        species_name = (
+            quality_filtered_df.get("species", pd.Series()).iloc[0]
+            if "species" in quality_filtered_df.columns
+            else ""
+        )
         scheme_df = _remove_suspect_combinations(scheme_df, species_name, suspect_df)
 
     # Exclude novel/unknown STs (st == "-")

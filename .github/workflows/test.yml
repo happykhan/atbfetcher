@@ -7,6 +7,21 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          environments: lint
+
+      - name: Lint
+        run: pixi run -e lint lint
+
+      - name: Check formatting
+        run: pixi run -e lint format-check
+
   test:
     runs-on: ubuntu-latest
     steps:

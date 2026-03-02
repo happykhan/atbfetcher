@@ -1,7 +1,6 @@
 """Tests for MLST filtering logic."""
 
 import pandas as pd
-import pytest
 
 from atbfetcher.mlst import (
     auto_detect_scheme,
@@ -20,22 +19,26 @@ class TestAutoDetectScheme:
 
     def test_returns_none_when_no_schemes(self):
         """Should return None when no MLST data matches."""
-        mlst_df = pd.DataFrame({
-            "sample": ["X1"],
-            "mlst_scheme": ["-"],
-            "mlst_st": ["-"],
-        })
+        mlst_df = pd.DataFrame(
+            {
+                "sample": ["X1"],
+                "mlst_scheme": ["-"],
+                "mlst_st": ["-"],
+            }
+        )
         result = auto_detect_scheme(mlst_df, ["X1"])
         assert result is None
 
     def test_ignores_dash_scheme(self, sample_mlst_df):
         """Scheme '-' should be excluded from detection."""
         # Only pass samples that have no valid scheme
-        empty_mlst = pd.DataFrame({
-            "sample": ["X1", "X2"],
-            "mlst_scheme": ["-", "-"],
-            "mlst_st": ["-", "-"],
-        })
+        empty_mlst = pd.DataFrame(
+            {
+                "sample": ["X1", "X2"],
+                "mlst_scheme": ["-", "-"],
+                "mlst_st": ["-", "-"],
+            }
+        )
         result = auto_detect_scheme(empty_mlst, ["X1", "X2"])
         assert result is None
 
@@ -45,14 +48,16 @@ class TestFilterByMlst:
 
     def _make_quality_df(self) -> pd.DataFrame:
         """Create a quality-filtered DataFrame for testing."""
-        return pd.DataFrame({
-            "sample": ["SAMN001", "SAMN002", "SAMN007"],
-            "species": ["Escherichia coli"] * 3,
-            "Completeness_Specific": [99.5, 97.2, 96.0],
-            "Contamination": [0.5, 1.2, 1.0],
-            "GC_Content": [50.5, 50.8, 50.2],
-            "Genome_Size": [5_100_000, 4_900_000, 5_050_000],
-        })
+        return pd.DataFrame(
+            {
+                "sample": ["SAMN001", "SAMN002", "SAMN007"],
+                "species": ["Escherichia coli"] * 3,
+                "Completeness_Specific": [99.5, 97.2, 96.0],
+                "Contamination": [0.5, 1.2, 1.0],
+                "GC_Content": [50.5, 50.8, 50.2],
+                "Genome_Size": [5_100_000, 4_900_000, 5_050_000],
+            }
+        )
 
     def test_one_per_st(self, sample_mlst_df):
         """Should select one genome per resolved ST, excluding novel."""
@@ -83,10 +88,12 @@ class TestFilterByMlst:
     def test_suspect_removal(self, sample_mlst_df):
         """Suspect MLST+species combos should be filtered out."""
         quality_df = self._make_quality_df()
-        suspect_df = pd.DataFrame({
-            "Suspect_MLST": ["ecoli_achtman_4(10)"],
-            "Species_clash_with": ["Escherichia coli"],
-        })
+        suspect_df = pd.DataFrame(
+            {
+                "Suspect_MLST": ["ecoli_achtman_4(10)"],
+                "Species_clash_with": ["Escherichia coli"],
+            }
+        )
         result = filter_by_mlst(
             quality_df,
             sample_mlst_df,
@@ -125,10 +132,12 @@ class TestFilterByMlst:
 
     def test_empty_quality_df(self, sample_mlst_df):
         """Empty quality DataFrame should return empty result."""
-        empty_df = pd.DataFrame({
-            "sample": pd.Series(dtype=str),
-            "Completeness_Specific": pd.Series(dtype=float),
-        })
+        empty_df = pd.DataFrame(
+            {
+                "sample": pd.Series(dtype=str),
+                "Completeness_Specific": pd.Series(dtype=float),
+            }
+        )
         result = filter_by_mlst(
             empty_df,
             sample_mlst_df,

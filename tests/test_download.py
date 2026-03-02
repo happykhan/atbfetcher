@@ -1,11 +1,7 @@
 """Tests for download and extraction logic."""
 
 import tarfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pandas as pd
-import pytest
 
 from atbfetcher.download import (
     AWS_BASE_URL,
@@ -41,11 +37,7 @@ class TestResolveTarballs:
         result = resolve_tarballs(sample_ids, sample_file_list_df)
 
         # Should still find SAMN001
-        all_samples = {
-            e["sample"]
-            for entries in result.values()
-            for e in entries
-        }
+        all_samples = {e["sample"] for entries in result.values() for e in entries}
         assert "SAMN001" in all_samples
         assert "SAMN_MISSING" not in all_samples
 
@@ -94,9 +86,7 @@ class TestExtractSamples:
             tar.add(content_dir / "file_a.fa.gz", arcname="file_a.fa.gz")
 
         output_dir = tmp_path / "output"
-        result = extract_samples(
-            tar_path, ["file_a.fa.gz", "file_missing.fa.gz"], output_dir
-        )
+        result = extract_samples(tar_path, ["file_a.fa.gz", "file_missing.fa.gz"], output_dir)
 
         assert len(result) == 1
         assert result[0].name == "file_a.fa.gz"
@@ -152,9 +142,7 @@ class TestFetchFromAws:
         mock_response.iter_content.return_value = [b"data"]
         mock_response.raise_for_status.return_value = None
 
-        with patch(
-            "atbfetcher.download.requests.get", return_value=mock_response
-        ) as mock_get:
+        with patch("atbfetcher.download.requests.get", return_value=mock_response) as mock_get:
             fetch_from_aws(["SAMEA2445563"], tmp_path, max_workers=1)
 
         mock_get.assert_called_once_with(
@@ -169,18 +157,14 @@ class TestEstimateDownloadTime:
 
     def test_few_genomes_prefers_aws(self):
         """Small genome counts should prefer AWS."""
-        method, aws_t, osf_t = estimate_download_time(
-            n_genomes=10, n_tarballs=7
-        )
+        method, aws_t, osf_t = estimate_download_time(n_genomes=10, n_tarballs=7)
         assert method == "aws"
         assert aws_t < osf_t
 
     def test_many_genomes_few_tarballs_prefers_osf(self):
         """When genomes are densely packed in few tarballs, OSF wins."""
         # 50000 genomes from 5 tarballs
-        method, aws_t, osf_t = estimate_download_time(
-            n_genomes=50000, n_tarballs=5
-        )
+        method, aws_t, osf_t = estimate_download_time(n_genomes=50000, n_tarballs=5)
         assert method == "osf"
         assert osf_t < aws_t
 
@@ -192,8 +176,6 @@ class TestEstimateDownloadTime:
 
     def test_returns_positive_times(self):
         """Estimated times should always be positive."""
-        _, aws_t, osf_t = estimate_download_time(
-            n_genomes=1, n_tarballs=1
-        )
+        _, aws_t, osf_t = estimate_download_time(n_genomes=1, n_tarballs=1)
         assert aws_t > 0
         assert osf_t > 0

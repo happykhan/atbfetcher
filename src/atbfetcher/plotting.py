@@ -11,7 +11,6 @@ import matplotlib
 
 matplotlib.use("Agg")  # Non-interactive backend for CLI use
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
