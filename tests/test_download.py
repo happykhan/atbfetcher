@@ -170,34 +170,30 @@ class TestEstimateDownloadTime:
     def test_few_genomes_prefers_aws(self):
         """Small genome counts should prefer AWS."""
         method, aws_t, osf_t = estimate_download_time(
-            n_genomes=10, n_tarballs=7, cached_tarballs=0
+            n_genomes=10, n_tarballs=7
         )
         assert method == "aws"
         assert aws_t < osf_t
 
-    def test_many_genomes_many_tarballs_prefers_osf(self):
-        """When genomes are densely packed in few tarballs, OSF may win."""
-        # 5000 genomes from 5 tarballs (all cached) — extraction only
+    def test_many_genomes_few_tarballs_prefers_osf(self):
+        """When genomes are densely packed in few tarballs, OSF wins."""
+        # 50000 genomes from 5 tarballs
         method, aws_t, osf_t = estimate_download_time(
-            n_genomes=5000, n_tarballs=5, cached_tarballs=5
+            n_genomes=50000, n_tarballs=5
         )
         assert method == "osf"
         assert osf_t < aws_t
 
-    def test_cached_tarballs_reduce_osf_time(self):
-        """Cached tarballs should reduce OSF estimated time."""
-        _, _, uncached_t = estimate_download_time(
-            n_genomes=50, n_tarballs=10, cached_tarballs=0
-        )
-        _, _, cached_t = estimate_download_time(
-            n_genomes=50, n_tarballs=10, cached_tarballs=10
-        )
-        assert cached_t < uncached_t
+    def test_more_tarballs_increases_osf_time(self):
+        """More tarballs should increase OSF estimated time."""
+        _, _, few_t = estimate_download_time(n_genomes=50, n_tarballs=5)
+        _, _, many_t = estimate_download_time(n_genomes=50, n_tarballs=20)
+        assert many_t > few_t
 
     def test_returns_positive_times(self):
         """Estimated times should always be positive."""
         _, aws_t, osf_t = estimate_download_time(
-            n_genomes=1, n_tarballs=1, cached_tarballs=0
+            n_genomes=1, n_tarballs=1
         )
         assert aws_t > 0
         assert osf_t > 0

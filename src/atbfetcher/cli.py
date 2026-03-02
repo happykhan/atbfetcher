@@ -146,20 +146,16 @@ def _download_assemblies(
 
     # Resolve source
     if source == "auto":
-        # Figure out how many tarballs we'd need and how many are cached
+        # Figure out how many tarballs we'd need
         tarballs = resolve_tarballs(sample_ids, file_list_df)
         n_tarballs = len(tarballs)
-        tarball_cache = cache_dir / "tarballs"
-        cached = sum(
-            1 for t in tarballs if (tarball_cache / t).exists()
-        )
         method, aws_est, osf_est = estimate_download_time(
-            n_genomes, n_tarballs, cached
+            n_genomes, n_tarballs
         )
         click.echo(
             f"  Estimated time — AWS: ~{aws_est:.0f}s, "
             f"OSF tarballs: ~{osf_est:.0f}s "
-            f"({n_tarballs} tarballs, {cached} cached)"
+            f"({n_tarballs} tarballs)"
         )
         click.echo(f"  Auto-selected source: {method}")
     else:

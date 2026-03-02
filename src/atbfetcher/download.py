@@ -33,9 +33,11 @@ _TARBALL_EXTRACT_SECS = 25.0   # avg time to decompress + scan one tarball
 def estimate_download_time(
     n_genomes: int,
     n_tarballs: int,
-    cached_tarballs: int = 0,
 ) -> tuple[str, float, float]:
     """Estimate download time for AWS vs tarball and pick the faster method.
+
+    Assumes uncached tarballs — if the user has cached tarballs they can
+    force ``--source osf`` to take advantage of that.
 
     Parameters
     ----------
@@ -43,8 +45,6 @@ def estimate_download_time(
         Number of genomes to download.
     n_tarballs : int
         Number of unique tarballs needed.
-    cached_tarballs : int
-        Number of tarballs already in cache.
 
     Returns
     -------
@@ -52,11 +52,7 @@ def estimate_download_time(
         (recommended_method, aws_estimate_secs, tarball_estimate_secs)
     """
     aws_time = n_genomes * _AWS_PER_FILE_SECS
-    uncached = n_tarballs - cached_tarballs
-    tarball_time = (
-        uncached * _TARBALL_DOWNLOAD_SECS
-        + n_tarballs * _TARBALL_EXTRACT_SECS
-    )
+    tarball_time = n_tarballs * (_TARBALL_DOWNLOAD_SECS + _TARBALL_EXTRACT_SECS)
     method = "aws" if aws_time <= tarball_time else "osf"
     return method, aws_time, tarball_time
 
