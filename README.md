@@ -8,7 +8,7 @@ Fetch genomes from [AllTheBacteria](https://allthebacteria.org) (ATB) and [NCBI 
 - **MLST-based selection**: Pick genomes by MLST sequence type for phylogenetic diversity
 - **Accession list**: Fetch specific genomes by accession ID
 - **RefSeq mode**: Same workflow against NCBI RefSeq data (stratified by genome size)
-- **Quality filtering**: Automatic quality control via ATB HQ flag, [Qualibact](https://qualibact.org) per-species cutoffs, or [CheckM2](https://github.com/chklovski/CheckM2) metrics
+- **Quality filtering**: Automatic quality control via ATB HQ flag (default) or [Qualibact](https://qualibact.org) per-species cutoffs
 - **Smart download**: Auto-selects between AWS S3 (individual files) and OSF tarballs based on estimated speed
 - **Caching**: Downloaded metadata cached locally as Parquet for fast reuse
 - **Multi-threaded decompression**: Parallel XZ extraction for faster tarball downloads
