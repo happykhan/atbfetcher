@@ -224,7 +224,7 @@ docs/                 # Documentation
 
 If you use AllTheBacteria data, please cite the preprint:
 
-> Hunt M, Letcher B, Malone KM, et al. AllTheBacteria - all bacterial genomes assembled, available andடarmonised. *bioRxiv* (2024). https://doi.org/10.1101/2024.03.08.584059
+> Hunt M et al. AllTheBacteria - all bacterial genomes assembled, available andடarmonised. *bioRxiv* (2024). https://doi.org/10.1101/2024.03.08.584059
 
 ## Acknowledgements
 
