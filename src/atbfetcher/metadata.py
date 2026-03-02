@@ -112,12 +112,18 @@ class MetadataCache:
         """
         return self._load_or_download("file_list", URLS["file_list"])
 
-    def load_species_calls(self) -> pd.DataFrame:
+    def load_species_calls(self, hq_only: bool = True) -> pd.DataFrame:
         """Load Sylph species calls for all ATB samples.
 
         Raw columns are ``sample_accession`` and ``sylph_species``, renamed
         to ``sample`` and ``species`` for consistency across the codebase.
-        Only HQ (high-quality) samples are retained.
+
+        Parameters
+        ----------
+        hq_only : bool
+            If True (default), keep only samples that pass ATB's HQ filter
+            (completeness >= 90%, contamination <= 5%, assembly length
+            100kbp–15Mbp, <= 2000 contigs, N50 >= 2000).
         """
         df = self._load_or_download("species_calls", URLS["species_calls"])
 
@@ -128,7 +134,7 @@ class MetadataCache:
         })
 
         # Keep only high-quality Sylph calls
-        if "HQ" in df.columns:
+        if hq_only and "HQ" in df.columns:
             df = df[df["HQ"] == "T"].copy()
 
         return df

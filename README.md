@@ -8,9 +8,10 @@ Fetch genomes from [AllTheBacteria](https://allthebacteria.org) (ATB) and [NCBI 
 - **MLST-based selection**: Pick genomes by MLST sequence type for phylogenetic diversity
 - **Accession list**: Fetch specific genomes by accession ID
 - **RefSeq mode**: Same workflow against NCBI RefSeq data (stratified by genome size)
-- **Quality filtering**: Automatic quality control via [Qualibact](https://qualibact.org) per-species cutoffs and [CheckM2](https://github.com/chklovski/CheckM2) metrics
+- **Quality filtering**: Automatic quality control via ATB HQ flag, [Qualibact](https://qualibact.org) per-species cutoffs, or [CheckM2](https://github.com/chklovski/CheckM2) metrics
+- **Smart download**: Auto-selects between AWS S3 (individual files) and OSF tarballs based on estimated speed
 - **Caching**: Downloaded metadata cached locally as Parquet for fast reuse
-- **Multi-threaded decompression**: Parallel XZ extraction for faster downloads
+- **Multi-threaded decompression**: Parallel XZ extraction for faster tarball downloads
 - **Rich logging**: Colourful CLI output via [Rich](https://github.com/Textualize/rich)
 
 ## Installation
@@ -100,6 +101,7 @@ Fetch a stratified subsample of genomes for a species from ATB.
 | `--output`, `-o` | (required) | Output directory for assemblies |
 | `--n`, `-n` | 1000 | Number of genomes to select |
 | `--seed` | 42 | Random seed for reproducibility |
+| `--source` | auto | Download source: `auto`, `aws`, or `osf` |
 | `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 | `--cache-dir` | `~/.atbfetcher` | Directory for cached metadata |
 | `--no-cache` | False | Skip caching, download fresh |
@@ -116,11 +118,18 @@ Select genomes based on MLST sequence types, ensuring diversity across STs.
 | `--output`, `-o` | (required) | Output directory |
 | `--n`, `-n` | 1000 | Number of genomes to select |
 | `--seed` | 42 | Random seed |
+| `--source` | auto | Download source: `auto`, `aws`, or `osf` |
 | `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 
 ### `atbfetcher accessions`
 
 Fetch specific assemblies by accession ID.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--output`, `-o` | (required) | Output directory |
+| `--source` | auto | Download source: `auto`, `aws`, or `osf` |
+| `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 
 ### `atbfetcher list-species`
 
@@ -139,6 +148,15 @@ Fetch a stratified subsample from NCBI RefSeq (stratified by genome size only si
 Fetch specific RefSeq assemblies by accession.
 
 ## How It Works
+
+### Download Sources
+
+atbfetcher can download assemblies from two sources:
+
+- **AWS S3** — individual `.fa.gz` files from a public bucket (fast for small batches)
+- **OSF tarballs** — `tar.xz` archives containing many assemblies (efficient for large batches)
+
+By default (`--source auto`), atbfetcher estimates the download time for both and picks the faster option. ATB tarballs are grouped by species, so for large species-specific fetches (>500 genomes), tarballs are often faster. See [docs/download_sources.md](docs/download_sources.md) for details on the cost model.
 
 ### Data Sources
 
@@ -184,13 +202,14 @@ src/
     quality.py        # Quality filtering
     sampling.py       # Stratified sampling (N50+size or size-only)
     plotting.py       # N50 vs genome size plots
-    download.py       # Tarball download/extraction (multi-threaded XZ)
+    download.py       # AWS S3 + tarball download/extraction
     mlst.py           # MLST-based selection
   refseqfetcher/      # RefSeq genome fetching
     cli.py            # RefSeq CLI
     fetch.py          # NCBI datasets integration
 tests/                # Pytest test suite
 data/                 # Bundled reference data
+docs/                 # Documentation
 ```
 
 ### Contributing
@@ -200,6 +219,17 @@ data/                 # Bundled reference data
 3. Write tests for your changes
 4. Ensure all tests pass (`pixi run -e test test`)
 5. Submit a pull request
+
+## Citation
+
+If you use AllTheBacteria data, please cite the preprint:
+
+> Hunt M, Letcher B, Malone KM, et al. AllTheBacteria - all bacterial genomes assembled, available andடarmonised. *bioRxiv* (2024). https://doi.org/10.1101/2024.03.08.584059
+
+## Acknowledgements
+
+- **Martin Hunt** & **Zamin Iqbal** for creating and maintaining AllTheBacteria
+- **Jake Lacey** & **Torsten Seemann** for providing MLST typing information used in this tool
 
 ## License
 

@@ -116,6 +116,22 @@ def threads_option(func):
     )(func)
 
 
+def quality_filter_option(func):
+    """Decorator adding a --quality-filter option."""
+    return click.option(
+        "--quality-filter", "-q",
+        type=click.Choice(["atb", "qualibact", "none"], case_sensitive=False),
+        default="atb",
+        show_default=True,
+        help=(
+            "Quality filter: 'atb' uses ATB HQ flag "
+            "(completeness>=90%%, contamination<=5%%, etc.), "
+            "'qualibact' adds per-species cutoffs from Qualibact on top of ATB HQ, "
+            "'none' skips all quality filtering."
+        ),
+    )(func)
+
+
 def source_option(func):
     """Decorator adding a --source option for download source selection."""
     return click.option(
@@ -191,9 +207,10 @@ def main():
               help="Random seed for reproducibility.")
 @threads_option
 @source_option
+@quality_filter_option
 @cache_options
 @verbose_option
-def species(species_name, output, n, seed, threads, source,
+def species(species_name, output, n, seed, threads, source, quality_filter,
             cache_dir, no_cache, refresh, verbose):
     """Fetch a stratified subsample of genomes for a species.
 
@@ -202,15 +219,13 @@ def species(species_name, output, n, seed, threads, source,
     _setup_logging(verbose)
     logger = logging.getLogger(__name__)
 
+    use_hq = quality_filter != "none"
     cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
 
     click.echo(f"Loading metadata for {species_name}...")
-    species_calls_df = cache.load_species_calls()
+    species_calls_df = cache.load_species_calls(hq_only=use_hq)
     checkm2_df = cache.load_checkm2()
     file_list_df = cache.load_file_list()
-
-    click.echo("Loading Qualibact cutoffs...")
-    qualibact_cutoffs = load_qualibact_cutoffs()
 
     click.echo(f"Finding samples for {species_name}...")
     samples_df = get_samples_for_species(species_name, species_calls_df)
@@ -220,9 +235,20 @@ def species(species_name, output, n, seed, threads, source,
         click.echo(f"No samples found for species: {species_name}", err=True)
         sys.exit(1)
 
-    click.echo("Filtering by quality...")
-    hq_df = filter_by_quality(samples_df, checkm2_df, species_name, qualibact_cutoffs)
-    click.echo(f"  {len(hq_df)} high-quality samples")
+    if quality_filter == "qualibact":
+        click.echo("Loading Qualibact cutoffs...")
+        qualibact_cutoffs = load_qualibact_cutoffs()
+        click.echo("Filtering by quality (Qualibact)...")
+        hq_df = filter_by_quality(samples_df, checkm2_df, species_name, qualibact_cutoffs)
+        click.echo(f"  {len(hq_df)} samples after Qualibact filtering")
+    elif quality_filter == "atb":
+        click.echo("Using ATB HQ filter (pre-applied)...")
+        hq_df = samples_df.merge(checkm2_df, on="sample", how="inner")
+        click.echo(f"  {len(hq_df)} high-quality samples")
+    else:
+        click.echo("Quality filtering: disabled")
+        hq_df = samples_df.merge(checkm2_df, on="sample", how="inner")
+        click.echo(f"  {len(hq_df)} samples (no quality filter)")
 
     if hq_df.empty:
         click.echo("No samples passed quality filters.", err=True)
@@ -258,9 +284,10 @@ def species(species_name, output, n, seed, threads, source,
               help="Random seed for reproducibility.")
 @threads_option
 @source_option
+@quality_filter_option
 @cache_options
 @verbose_option
-def mlst(species_name, scheme, output, n, seed, threads, source,
+def mlst(species_name, scheme, output, n, seed, threads, source, quality_filter,
          cache_dir, no_cache, refresh, verbose):
     """Fetch genomes selected by MLST sequence types.
 
@@ -269,15 +296,13 @@ def mlst(species_name, scheme, output, n, seed, threads, source,
     _setup_logging(verbose)
     logger = logging.getLogger(__name__)
 
+    use_hq = quality_filter != "none"
     cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
 
     click.echo(f"Loading metadata for {species_name}...")
-    species_calls_df = cache.load_species_calls()
+    species_calls_df = cache.load_species_calls(hq_only=use_hq)
     checkm2_df = cache.load_checkm2()
     file_list_df = cache.load_file_list()
-
-    click.echo("Loading Qualibact cutoffs...")
-    qualibact_cutoffs = load_qualibact_cutoffs()
 
     click.echo(f"Finding samples for {species_name}...")
     samples_df = get_samples_for_species(species_name, species_calls_df)
@@ -287,9 +312,20 @@ def mlst(species_name, scheme, output, n, seed, threads, source,
         click.echo(f"No samples found for species: {species_name}", err=True)
         sys.exit(1)
 
-    click.echo("Filtering by quality...")
-    hq_df = filter_by_quality(samples_df, checkm2_df, species_name, qualibact_cutoffs)
-    click.echo(f"  {len(hq_df)} high-quality samples")
+    if quality_filter == "qualibact":
+        click.echo("Loading Qualibact cutoffs...")
+        qualibact_cutoffs = load_qualibact_cutoffs()
+        click.echo("Filtering by quality (Qualibact)...")
+        hq_df = filter_by_quality(samples_df, checkm2_df, species_name, qualibact_cutoffs)
+        click.echo(f"  {len(hq_df)} samples after Qualibact filtering")
+    elif quality_filter == "atb":
+        click.echo("Using ATB HQ filter (pre-applied)...")
+        hq_df = samples_df.merge(checkm2_df, on="sample", how="inner")
+        click.echo(f"  {len(hq_df)} high-quality samples")
+    else:
+        click.echo("Quality filtering: disabled")
+        hq_df = samples_df.merge(checkm2_df, on="sample", how="inner")
+        click.echo(f"  {len(hq_df)} samples (no quality filter)")
 
     if hq_df.empty:
         click.echo("No samples passed quality filters.", err=True)

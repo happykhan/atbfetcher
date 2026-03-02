@@ -10,7 +10,11 @@ import pytest
 
 @pytest.fixture
 def sample_species_calls_df():
-    """Small species calls DataFrame for testing."""
+    """Small species calls DataFrame for testing.
+
+    Includes an HQ column mimicking ATB's high-quality flag.
+    SAMN004 and SAMN008 are not HQ.
+    """
     return pd.DataFrame({
         "sample": [
             "SAMN001", "SAMN002", "SAMN003", "SAMN004",
@@ -26,6 +30,7 @@ def sample_species_calls_df():
             "Escherichia coli",
             "Bacillus sp000746275",
         ],
+        "HQ": ["T", "T", "T", "F", "T", "T", "T", "T"],
     })
 
 
@@ -44,6 +49,10 @@ def sample_checkm2_df():
             5_600_000, 2_800_000, 5_050_000,
         ],
         "GC_Content": [50.5, 50.8, 55.1, 54.9, 57.3, 32.8, 50.2],
+        "Contig_N50": [
+            150_000, 120_000, 95_000, 10_000,
+            200_000, 80_000, 130_000,
+        ],
     })
 
 
