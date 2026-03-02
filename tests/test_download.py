@@ -2,11 +2,18 @@
 
 import tarfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
-from atbfetcher.download import extract_samples, resolve_tarballs
+from atbfetcher.download import (
+    AWS_BASE_URL,
+    estimate_download_time,
+    extract_samples,
+    fetch_from_aws,
+    resolve_tarballs,
+)
 
 
 class TestResolveTarballs:
@@ -93,3 +100,104 @@ class TestExtractSamples:
 
         assert len(result) == 1
         assert result[0].name == "file_a.fa.gz"
+
+
+class TestFetchFromAws:
+    """Tests for AWS S3 individual file downloads."""
+
+    def test_downloads_files(self, tmp_path):
+        """Should download files from AWS and return paths."""
+        fake_content = b">seq\nACGT\n"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [fake_content]
+        mock_response.raise_for_status.return_value = None
+
+        with patch("atbfetcher.download.requests.get", return_value=mock_response):
+            result = fetch_from_aws(["SAMN001", "SAMN002"], tmp_path, max_workers=2)
+
+        assert len(result) == 2
+        names = {p.name for p in result}
+        assert names == {"SAMN001.fa.gz", "SAMN002.fa.gz"}
+
+    def test_skips_existing_files(self, tmp_path):
+        """Should skip files that already exist."""
+        existing = tmp_path / "SAMN001.fa.gz"
+        existing.write_bytes(b">seq\nACGT\n")
+
+        with patch("atbfetcher.download.requests.get") as mock_get:
+            result = fetch_from_aws(["SAMN001"], tmp_path, max_workers=1)
+
+        # Should not have made any HTTP requests
+        mock_get.assert_not_called()
+        assert len(result) == 1
+
+    def test_handles_download_failure(self, tmp_path):
+        """Failed downloads should return None and not crash."""
+        import requests as req
+
+        with patch(
+            "atbfetcher.download.requests.get",
+            side_effect=req.RequestException("Connection error"),
+        ):
+            result = fetch_from_aws(["SAMN_BAD"], tmp_path, max_workers=1)
+
+        assert len(result) == 0
+        assert not (tmp_path / "SAMN_BAD.fa.gz").exists()
+
+    def test_correct_url_pattern(self, tmp_path):
+        """Should use the correct AWS S3 URL pattern."""
+        mock_response = MagicMock()
+        mock_response.iter_content.return_value = [b"data"]
+        mock_response.raise_for_status.return_value = None
+
+        with patch(
+            "atbfetcher.download.requests.get", return_value=mock_response
+        ) as mock_get:
+            fetch_from_aws(["SAMEA2445563"], tmp_path, max_workers=1)
+
+        mock_get.assert_called_once_with(
+            f"{AWS_BASE_URL}/SAMEA2445563.fa.gz",
+            stream=True,
+            timeout=120,
+        )
+
+
+class TestEstimateDownloadTime:
+    """Tests for download time estimation logic."""
+
+    def test_few_genomes_prefers_aws(self):
+        """Small genome counts should prefer AWS."""
+        method, aws_t, osf_t = estimate_download_time(
+            n_genomes=10, n_tarballs=7, cached_tarballs=0
+        )
+        assert method == "aws"
+        assert aws_t < osf_t
+
+    def test_many_genomes_many_tarballs_prefers_osf(self):
+        """When genomes are densely packed in few tarballs, OSF may win."""
+        # 5000 genomes from 5 tarballs (all cached) — extraction only
+        method, aws_t, osf_t = estimate_download_time(
+            n_genomes=5000, n_tarballs=5, cached_tarballs=5
+        )
+        assert method == "osf"
+        assert osf_t < aws_t
+
+    def test_cached_tarballs_reduce_osf_time(self):
+        """Cached tarballs should reduce OSF estimated time."""
+        _, _, uncached_t = estimate_download_time(
+            n_genomes=50, n_tarballs=10, cached_tarballs=0
+        )
+        _, _, cached_t = estimate_download_time(
+            n_genomes=50, n_tarballs=10, cached_tarballs=10
+        )
+        assert cached_t < uncached_t
+
+    def test_returns_positive_times(self):
+        """Estimated times should always be positive."""
+        _, aws_t, osf_t = estimate_download_time(
+            n_genomes=1, n_tarballs=1, cached_tarballs=0
+        )
+        assert aws_t > 0
+        assert osf_t > 0

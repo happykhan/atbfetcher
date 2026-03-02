@@ -16,7 +16,13 @@ import click
 import pandas as pd
 from rich.logging import RichHandler
 
-from atbfetcher.download import DEFAULT_THREADS, fetch_assemblies
+from atbfetcher.download import (
+    DEFAULT_THREADS,
+    estimate_download_time,
+    fetch_assemblies,
+    fetch_from_aws,
+    resolve_tarballs,
+)
 from atbfetcher.metadata import DEFAULT_CACHE_DIR, MetadataCache, load_qualibact_cutoffs
 from atbfetcher.mlst import filter_by_mlst, load_suspect_contaminations
 from atbfetcher.plotting import plot_selection
@@ -110,6 +116,65 @@ def threads_option(func):
     )(func)
 
 
+def source_option(func):
+    """Decorator adding a --source option for download source selection."""
+    return click.option(
+        "--source",
+        type=click.Choice(["auto", "osf", "aws"], case_sensitive=False),
+        default="auto",
+        show_default=True,
+        help=(
+            "Download source: 'osf' extracts from OSF tar.xz archives, "
+            "'aws' fetches individual files from S3, "
+            "'auto' estimates which is faster and picks it."
+        ),
+    )(func)
+
+
+def _download_assemblies(
+    selected_df: pd.DataFrame,
+    file_list_df: pd.DataFrame,
+    output: Path,
+    cache_dir: Path,
+    no_cache: bool,
+    threads: int,
+    source: str,
+) -> list:
+    """Choose download source and fetch assemblies."""
+    sample_ids = selected_df["sample"].tolist()
+    n_genomes = len(sample_ids)
+
+    # Resolve source
+    if source == "auto":
+        # Figure out how many tarballs we'd need and how many are cached
+        tarballs = resolve_tarballs(sample_ids, file_list_df)
+        n_tarballs = len(tarballs)
+        tarball_cache = cache_dir / "tarballs"
+        cached = sum(
+            1 for t in tarballs if (tarball_cache / t).exists()
+        )
+        method, aws_est, osf_est = estimate_download_time(
+            n_genomes, n_tarballs, cached
+        )
+        click.echo(
+            f"  Estimated time — AWS: ~{aws_est:.0f}s, "
+            f"OSF tarballs: ~{osf_est:.0f}s "
+            f"({n_tarballs} tarballs, {cached} cached)"
+        )
+        click.echo(f"  Auto-selected source: {method}")
+    else:
+        method = source
+
+    if method == "aws":
+        click.echo("Downloading assemblies from AWS S3...")
+        return fetch_from_aws(sample_ids, output, max_workers=min(8, threads + 1))
+    else:
+        click.echo("Downloading assemblies via OSF tarballs...")
+        return fetch_assemblies(
+            selected_df, file_list_df, output, cache_dir, no_cache, threads=threads
+        )
+
+
 # -- Main CLI group --
 
 @click.group()
@@ -129,9 +194,11 @@ def main():
 @click.option("--seed", default=42, show_default=True,
               help="Random seed for reproducibility.")
 @threads_option
+@source_option
 @cache_options
 @verbose_option
-def species(species_name, output, n, seed, threads, cache_dir, no_cache, refresh, verbose):
+def species(species_name, output, n, seed, threads, source,
+            cache_dir, no_cache, refresh, verbose):
     """Fetch a stratified subsample of genomes for a species.
 
     SPECIES_NAME is the species to fetch (e.g. "Escherichia coli").
@@ -175,9 +242,8 @@ def species(species_name, output, n, seed, threads, cache_dir, no_cache, refresh
     click.echo("Generating selection plot...")
     plot_selection(hq_df, selected_df, output, species_name)
 
-    click.echo("Downloading assemblies...")
-    extracted = fetch_assemblies(
-        selected_df, file_list_df, output, cache_dir, no_cache, threads=threads
+    extracted = _download_assemblies(
+        selected_df, file_list_df, output, cache_dir, no_cache, threads, source
     )
     click.echo(f"Done! {len(extracted)} assemblies saved to {output}")
 
@@ -195,9 +261,11 @@ def species(species_name, output, n, seed, threads, cache_dir, no_cache, refresh
 @click.option("--seed", default=42, show_default=True,
               help="Random seed for reproducibility.")
 @threads_option
+@source_option
 @cache_options
 @verbose_option
-def mlst(species_name, scheme, output, n, seed, threads, cache_dir, no_cache, refresh, verbose):
+def mlst(species_name, scheme, output, n, seed, threads, source,
+         cache_dir, no_cache, refresh, verbose):
     """Fetch genomes selected by MLST sequence types.
 
     SPECIES_NAME is the species to fetch (e.g. "Escherichia coli").
@@ -265,9 +333,8 @@ def mlst(species_name, scheme, output, n, seed, threads, cache_dir, no_cache, re
     click.echo("Generating selection plot...")
     plot_selection(hq_df, selected_df, output, species_name)
 
-    click.echo("Downloading assemblies...")
-    extracted = fetch_assemblies(
-        selected_df, file_list_df, output, cache_dir, no_cache, threads=threads
+    extracted = _download_assemblies(
+        selected_df, file_list_df, output, cache_dir, no_cache, threads, source
     )
     click.echo(f"Done! {len(extracted)} assemblies saved to {output}")
 
@@ -279,9 +346,11 @@ def mlst(species_name, scheme, output, n, seed, threads, cache_dir, no_cache, re
 @click.option("--output", "-o", required=True, type=click.Path(path_type=Path),
               help="Output directory for downloaded assemblies.")
 @threads_option
+@source_option
 @cache_options
 @verbose_option
-def accessions(accessions_file, output, threads, cache_dir, no_cache, refresh, verbose):
+def accessions(accessions_file, output, threads, source,
+               cache_dir, no_cache, refresh, verbose):
     """Fetch assemblies for a list of accession IDs.
 
     ACCESSIONS_FILE is a text file with one accession per line.
@@ -303,9 +372,8 @@ def accessions(accessions_file, output, threads, cache_dir, no_cache, refresh, v
 
     selected_df = pd.DataFrame({"sample": acc_list})
 
-    click.echo("Downloading assemblies...")
-    extracted = fetch_assemblies(
-        selected_df, file_list_df, output, cache_dir, no_cache, threads=threads
+    extracted = _download_assemblies(
+        selected_df, file_list_df, output, cache_dir, no_cache, threads, source
     )
     click.echo(f"Done! {len(extracted)} assemblies saved to {output}")
 

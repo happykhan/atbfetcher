@@ -1,8 +1,8 @@
-"""Download and extract genome assemblies from ATB tarballs.
+"""Download and extract genome assemblies from ATB tarballs or AWS S3.
 
-ATB stores assemblies in tar.xz archives on OSF. This module maps sample IDs
-to their containing tarballs, downloads them, and extracts only the requested
-assembly files. Supports multi-threaded XZ decompression for faster extraction.
+ATB stores assemblies in tar.xz archives on OSF, and also provides individual
+gzipped FASTA files on a public AWS S3 bucket. This module supports both
+download methods and can auto-select the faster one based on genome count.
 """
 
 import hashlib
@@ -10,6 +10,7 @@ import logging
 import os
 import subprocess
 import tarfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
@@ -19,6 +20,45 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 DEFAULT_THREADS = max(1, os.cpu_count() - 1) if os.cpu_count() else 1
+
+# AWS S3 public bucket base URL for individual assemblies
+AWS_BASE_URL = "https://allthebacteria-assemblies.s3.eu-west-2.amazonaws.com"
+
+# Empirical timing constants (seconds), measured on typical connections
+_AWS_PER_FILE_SECS = 0.4       # avg time to download one .fa.gz from AWS (~800KB)
+_TARBALL_DOWNLOAD_SECS = 60.0  # avg time to download one ~3GB tarball (uncached)
+_TARBALL_EXTRACT_SECS = 25.0   # avg time to decompress + scan one tarball
+
+
+def estimate_download_time(
+    n_genomes: int,
+    n_tarballs: int,
+    cached_tarballs: int = 0,
+) -> tuple[str, float, float]:
+    """Estimate download time for AWS vs tarball and pick the faster method.
+
+    Parameters
+    ----------
+    n_genomes : int
+        Number of genomes to download.
+    n_tarballs : int
+        Number of unique tarballs needed.
+    cached_tarballs : int
+        Number of tarballs already in cache.
+
+    Returns
+    -------
+    tuple[str, float, float]
+        (recommended_method, aws_estimate_secs, tarball_estimate_secs)
+    """
+    aws_time = n_genomes * _AWS_PER_FILE_SECS
+    uncached = n_tarballs - cached_tarballs
+    tarball_time = (
+        uncached * _TARBALL_DOWNLOAD_SECS
+        + n_tarballs * _TARBALL_EXTRACT_SECS
+    )
+    method = "aws" if aws_time <= tarball_time else "osf"
+    return method, aws_time, tarball_time
 
 
 def resolve_tarballs(
@@ -221,6 +261,87 @@ def extract_samples(
         )
 
     return extracted
+
+
+def _download_one_aws(sample_id: str, output_dir: Path) -> Path | None:
+    """Download a single assembly from AWS S3.
+
+    Parameters
+    ----------
+    sample_id : str
+        Sample accession ID (e.g. SAMN12345678).
+    output_dir : Path
+        Directory to save the file.
+
+    Returns
+    -------
+    Path or None
+        Path to the downloaded .fa.gz file, or None on failure.
+    """
+    url = f"{AWS_BASE_URL}/{sample_id}.fa.gz"
+    dest = output_dir / f"{sample_id}.fa.gz"
+
+    if dest.exists():
+        logger.debug("Already exists: %s", dest.name)
+        return dest
+
+    try:
+        response = requests.get(url, stream=True, timeout=120)
+        response.raise_for_status()
+
+        with open(dest, "wb") as f:
+            for chunk in response.iter_content(chunk_size=65536):
+                f.write(chunk)
+
+        return dest
+    except requests.RequestException as e:
+        logger.warning("Failed to download %s from AWS: %s", sample_id, e)
+        if dest.exists():
+            dest.unlink()
+        return None
+
+
+def fetch_from_aws(
+    sample_ids: list[str],
+    output_dir: Path,
+    max_workers: int = 8,
+) -> list[Path]:
+    """Download assemblies individually from the ATB AWS S3 bucket.
+
+    Downloads gzipped FASTA files in parallel from the public bucket.
+
+    Parameters
+    ----------
+    sample_ids : list[str]
+        Sample accession IDs to download.
+    output_dir : Path
+        Directory for downloaded assemblies.
+    max_workers : int
+        Number of concurrent downloads.
+
+    Returns
+    -------
+    list[Path]
+        Paths to successfully downloaded files.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    downloaded = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_download_one_aws, sid, output_dir): sid
+            for sid in sample_ids
+        }
+        with tqdm(total=len(sample_ids), desc="AWS downloads", unit="file") as pbar:
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    downloaded.append(result)
+                pbar.update(1)
+
+    logger.info("Downloaded %d/%d assemblies from AWS", len(downloaded), len(sample_ids))
+    return downloaded
 
 
 def fetch_assemblies(
