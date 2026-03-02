@@ -24,7 +24,7 @@ from atbfetcher.download import (
     resolve_tarballs,
 )
 from atbfetcher.metadata import DEFAULT_CACHE_DIR, MetadataCache, load_qualibact_cutoffs
-from atbfetcher.mlst import filter_by_mlst, load_suspect_contaminations
+from atbfetcher.mlst import STRATEGIES, filter_by_mlst, load_suspect_contaminations
 from atbfetcher.plotting import plot_selection
 from atbfetcher.quality import filter_by_quality
 from atbfetcher.query import (
@@ -316,6 +316,13 @@ def species(
 )
 @click.option("--n", "-n", default=1000, show_default=True, help="Number of genomes to select.")
 @click.option("--seed", default=42, show_default=True, help="Random seed for reproducibility.")
+@click.option(
+    "--strategy",
+    type=click.Choice(list(STRATEGIES), case_sensitive=False),
+    default="frequency",
+    show_default=True,
+    help="ST selection strategy.",
+)
 @threads_option
 @source_option
 @quality_filter_option
@@ -327,6 +334,7 @@ def mlst(
     output,
     n,
     seed,
+    strategy,
     threads,
     source,
     quality_filter,
@@ -383,7 +391,7 @@ def mlst(
     scheme_label = scheme or "auto-detect"
     click.echo(f"Selecting {n} genomes by MLST (scheme: {scheme_label})...")
     selected_df = filter_by_mlst(
-        hq_df, mlst_df, scheme=scheme, n=n, suspect_df=suspect_df, seed=seed
+        hq_df, mlst_df, scheme=scheme, n=n, suspect_df=suspect_df, seed=seed, strategy=strategy
     )
     click.echo(f"  Selected {len(selected_df)} genomes")
 

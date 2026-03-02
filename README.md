@@ -158,6 +158,7 @@ Select genomes based on MLST sequence types, ensuring diversity across STs.
 | `--output`, `-o` | (required) | Output directory |
 | `--n`, `-n` | 1000 | Number of genomes to select |
 | `--seed` | 42 | Random seed |
+| `--strategy` | frequency | ST selection strategy: `frequency`, `proportional`, `equal`, or `random` |
 | `--source` | auto | Download source: `auto`, `aws`, or `osf` |
 | `--threads`, `-t` | CPU count - 1 | Threads for XZ decompression |
 
