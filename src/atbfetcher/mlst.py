@@ -173,7 +173,9 @@ def _select_proportional(
     # Compute raw proportional allocation
     allocations: dict[str, int] = {}
     for st, count in st_counts.items():
-        allocations[st] = max(1, round(count / total * n)) if n >= n_unique else round(count / total * n)
+        allocations[st] = (
+            max(1, round(count / total * n)) if n >= n_unique else round(count / total * n)
+        )
 
     # Adjust to hit exactly n
     current_total = sum(allocations.values())
@@ -211,9 +213,7 @@ def _select_proportional(
     return selected[:n]
 
 
-def _select_equal(
-    resolved: pd.DataFrame, n: int, rng: np.random.Generator
-) -> list[pd.Series]:
+def _select_equal(resolved: pd.DataFrame, n: int, rng: np.random.Generator) -> list[pd.Series]:
     """Equal genomes per ST, remainder distributed by frequency."""
     st_counts = resolved["mlst_st"].value_counts()
     sts_by_freq = st_counts.index.tolist()
@@ -262,9 +262,7 @@ def _select_equal(
     return selected[:n]
 
 
-def _select_random(
-    resolved: pd.DataFrame, n: int, rng: np.random.Generator
-) -> list[pd.Series]:
+def _select_random(resolved: pd.DataFrame, n: int, rng: np.random.Generator) -> list[pd.Series]:
     """Uniform random ST selection; wraps around when n > unique STs."""
     unique_sts = resolved["mlst_st"].unique()
     n_unique = len(unique_sts)

@@ -353,17 +353,13 @@ class TestStrategyValidation:
         """Unknown strategy should raise ValueError."""
         quality_df, mlst_df = multi_st_data
         with pytest.raises(ValueError, match="Unknown strategy"):
-            filter_by_mlst(
-                quality_df, mlst_df, scheme="ecoli_achtman_4", n=4, strategy="invalid"
-            )
+            filter_by_mlst(quality_df, mlst_df, scheme="ecoli_achtman_4", n=4, strategy="invalid")
 
     def test_default_strategy_is_frequency(self, multi_st_data):
         """Default strategy should be frequency."""
         quality_df, mlst_df = multi_st_data
         # Call without explicit strategy (default)
-        result_default = filter_by_mlst(
-            quality_df, mlst_df, scheme="ecoli_achtman_4", n=4, seed=42
-        )
+        result_default = filter_by_mlst(quality_df, mlst_df, scheme="ecoli_achtman_4", n=4, seed=42)
         result_explicit = filter_by_mlst(
             quality_df, mlst_df, scheme="ecoli_achtman_4", n=4, seed=42, strategy="frequency"
         )
