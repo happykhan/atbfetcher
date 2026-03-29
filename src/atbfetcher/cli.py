@@ -6,16 +6,25 @@ Provides subcommands to fetch genomes from AllTheBacteria:
 - ``accessions``: Fetch specific accessions
 - ``list-species``: Print available species names
 - ``species-count``: Show genome counts per species
+- ``query``: Flexible metadata query with optional download
+- ``info``: Per-sample detail view
+- ``summarise``: Group-by counts and stats
+- ``mlst-query``: Filter samples by ST / scheme / species (no download)
+- ``config``: Manage user configuration
 """
 
+import difflib
 import logging
+import sqlite3
 import sys
+import tomllib
 from pathlib import Path
 
 import click
 import pandas as pd
 from rich.logging import RichHandler
 
+from atbfetcher.config import CONFIG_PATH, default_config, load_config, write_config
 from atbfetcher.download import (
     DEFAULT_THREADS,
     estimate_download_time,
@@ -25,6 +34,7 @@ from atbfetcher.download import (
 )
 from atbfetcher.metadata import DEFAULT_CACHE_DIR, MetadataCache, load_qualibact_cutoffs
 from atbfetcher.mlst import STRATEGIES, filter_by_mlst, load_suspect_contaminations
+from atbfetcher.output import FORMATS, print_dataframe, resolve_format
 from atbfetcher.plotting import plot_selection
 from atbfetcher.quality import filter_by_quality
 from atbfetcher.query import (
@@ -165,6 +175,22 @@ def source_option(func):
     )(func)
 
 
+def format_option(func):
+    """Decorator adding a --format option for output format selection."""
+    return click.option(
+        "--format",
+        "output_format",
+        type=click.Choice(list(FORMATS), case_sensitive=False),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format: 'table' for human-readable aligned table, "
+            "'tsv'/'csv'/'json' for machine-readable output, "
+            "'auto' uses table when stdout is a TTY, otherwise tsv."
+        ),
+    )(func)
+
+
 def _download_assemblies(
     selected_df: pd.DataFrame,
     file_list_df: pd.DataFrame,
@@ -201,6 +227,50 @@ def _download_assemblies(
         return fetch_assemblies(
             selected_df, file_list_df, output, cache_dir, no_cache, threads=threads
         )
+
+
+def _suggest_species(query: str, species_list: list[str]) -> list[str]:
+    """Return close species name matches using difflib.
+
+    Parameters
+    ----------
+    query : str
+        The species name the user provided.
+    species_list : list[str]
+        Available species names to match against.
+
+    Returns
+    -------
+    list[str]
+        Up to 5 close matches.
+    """
+    return difflib.get_close_matches(query, species_list, n=5, cutoff=0.5)
+
+
+def _load_toml_filters(filter_file: Path | None) -> dict:
+    """Load filter criteria from a TOML file.
+
+    Parameters
+    ----------
+    filter_file : Path or None
+        Path to a TOML filter file.  Returns empty dict if None or missing.
+
+    Returns
+    -------
+    dict
+        Flattened filter dict (keys match CLI option names without dashes).
+    """
+    if filter_file is None or not filter_file.exists():
+        return {}
+    with open(filter_file, "rb") as f:
+        data = tomllib.load(f)
+    # Flatten one level: {"filters": {"species": "..."}} -> {"species": "..."}
+    flat: dict = {}
+    for section_vals in data.values():
+        if isinstance(section_vals, dict):
+            flat.update(section_vals)
+        # ignore non-dict top-level values
+    return flat
 
 
 # -- Main CLI group --
@@ -264,6 +334,13 @@ def species(
 
     if samples_df.empty:
         click.echo(f"No samples found for species: {species_name}", err=True)
+        # Feature 1: species typo suggestions
+        available = list_species(species_calls_df)
+        suggestions = _suggest_species(species_name, available)
+        if suggestions:
+            click.echo("Did you mean one of:", err=True)
+            for s in suggestions:
+                click.echo(f"  {s}", err=True)
         sys.exit(1)
 
     if quality_filter == "qualibact":
@@ -363,6 +440,13 @@ def mlst(
 
     if samples_df.empty:
         click.echo(f"No samples found for species: {species_name}", err=True)
+        # Feature 1: species typo suggestions
+        available = list_species(species_calls_df)
+        suggestions = _suggest_species(species_name, available)
+        if suggestions:
+            click.echo("Did you mean one of:", err=True)
+            for s in suggestions:
+                click.echo(f"  {s}", err=True)
         sys.exit(1)
 
     if quality_filter == "qualibact":
@@ -423,11 +507,19 @@ def mlst(
     type=click.Path(path_type=Path),
     help="Output directory for downloaded assemblies.",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print what would be downloaded without fetching.",
+)
 @threads_option
 @source_option
 @cache_options
 @verbose_option
-def accessions(accessions_file, output, threads, source, cache_dir, no_cache, refresh, verbose):
+def accessions(
+    accessions_file, output, dry_run, threads, source, cache_dir, no_cache, refresh, verbose
+):
     """Fetch assemblies for a list of accession IDs.
 
     ACCESSIONS_FILE is a text file with one accession per line.
@@ -441,6 +533,13 @@ def accessions(accessions_file, output, threads, source, cache_dir, no_cache, re
         if line.strip() and not line.startswith("#")
     ]
     click.echo(f"Read {len(acc_list)} accessions from {accessions_file}")
+
+    # Feature 4: dry-run
+    if dry_run:
+        click.echo(f"[dry-run] Would download {len(acc_list)} assemblies to {output}:")
+        for acc in acc_list:
+            click.echo(f"  {acc}")
+        return
 
     cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
 
@@ -468,9 +567,10 @@ def accessions(accessions_file, output, threads, source, cache_dir, no_cache, re
     default=False,
     help="Show genome count per species, ordered by count (highest first).",
 )
+@format_option
 @cache_options
 @verbose_option
-def list_species_cmd(raw, count, cache_dir, no_cache, refresh, verbose):
+def list_species_cmd(raw, count, output_format, cache_dir, no_cache, refresh, verbose):
     """List all available species in AllTheBacteria."""
     _setup_logging(verbose)
 
@@ -489,12 +589,21 @@ def list_species_cmd(raw, count, cache_dir, no_cache, refresh, verbose):
             named["species"] = named["species"].apply(lambda x: clean_species_name(str(x)))
         counts = named["species"].value_counts().reset_index()
         counts.columns = ["species", "count"]
-        for _, row in counts.iterrows():
-            click.echo(f"{row['count']:>10,}  {row['species']}")
+        fmt = resolve_format(output_format)
+        if fmt == "table":
+            for _, row in counts.iterrows():
+                click.echo(f"{row['count']:>10,}  {row['species']}")
+        else:
+            print_dataframe(counts, output_format)
     else:
         names = list_species(species_calls_df, raw=raw)
-        for name in names:
-            click.echo(name)
+        fmt = resolve_format(output_format)
+        if fmt in ("tsv", "csv", "json"):
+            df = pd.DataFrame({"species": names})
+            print_dataframe(df, output_format)
+        else:
+            for name in names:
+                click.echo(name)
 
 
 # -- species-count subcommand --
@@ -504,9 +613,10 @@ def list_species_cmd(raw, count, cache_dir, no_cache, refresh, verbose):
 @click.option(
     "--top", default=0, show_default=True, help="Show only the top N species by count (0 = all)."
 )
+@format_option
 @cache_options
 @verbose_option
-def species_count(top, cache_dir, no_cache, refresh, verbose):
+def species_count(top, output_format, cache_dir, no_cache, refresh, verbose):
     """Show the number of HQ genomes per species in AllTheBacteria."""
     _setup_logging(verbose)
 
@@ -525,12 +635,15 @@ def species_count(top, cache_dir, no_cache, refresh, verbose):
     if top > 0:
         counts = counts.head(top)
 
-    click.echo(f"{'Species':<50} {'Count':>10}")
-    click.echo("-" * 62)
-    for _, row in counts.iterrows():
-        click.echo(f"{row['species']:<50} {row['count']:>10,}")
-
-    click.echo(f"\nTotal: {counts['count'].sum():,} HQ genomes across {len(counts)} species")
+    fmt = resolve_format(output_format)
+    if fmt in ("tsv", "csv", "json"):
+        print_dataframe(counts, output_format)
+    else:
+        click.echo(f"{'Species':<50} {'Count':>10}")
+        click.echo("-" * 62)
+        for _, row in counts.iterrows():
+            click.echo(f"{row['species']:<50} {row['count']:>10,}")
+        click.echo(f"\nTotal: {counts['count'].sum():,} HQ genomes across {len(counts)} species")
 
 
 # -- query subcommand --
@@ -587,6 +700,20 @@ def species_count(top, cache_dir, no_cache, refresh, verbose):
     default=None,
     help=f"Path to ATB SQLite database. Default: looks in cache dir for {SQLITE_FILENAME}.",
 )
+@click.option(
+    "--filter",
+    "filter_file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="TOML file with filter criteria (CLI flags override TOML values).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print what would be downloaded without fetching.",
+)
+@format_option
 @threads_option
 @source_option
 @cache_options
@@ -607,6 +734,9 @@ def query(
     seed,
     output,
     db_path,
+    filter_file,
+    dry_run,
+    output_format,
     threads,
     source,
     cache_dir,
@@ -631,10 +761,40 @@ def query(
         --isolation-source blood --n 500 --output ./saureus_blood
 
     \b
+      # Use a TOML filter file
+      atbfetcher query --filter my_query.toml
+
+    \b
     The SQLite database must be downloaded first:
       atbfetcher download-db
     """
     _setup_logging(verbose)
+
+    # Feature 6: load TOML filter file, CLI flags take precedence (override)
+    toml_filters = _load_toml_filters(filter_file)
+    if toml_filters:
+        click.echo(f"Loaded filter file: {filter_file}", err=True)
+
+    def _resolve(cli_val, toml_key, default=None):
+        """Return CLI value if explicitly set, else fall back to TOML, then default."""
+        if cli_val is not None:
+            return cli_val
+        return toml_filters.get(toml_key, default)
+
+    # Apply TOML defaults where CLI didn't provide values
+    species = _resolve(species, "species")
+    country = _resolve(country, "country")
+    year_from = _resolve(year_from, "year_from")
+    year_to = _resolve(year_to, "year_to")
+    host = _resolve(host, "host")
+    isolation_source = _resolve(isolation_source, "isolation_source")
+    if "hq_only" in toml_filters and hq_only is True:
+        hq_only = toml_filters["hq_only"]
+    min_completeness = _resolve(min_completeness, "min_completeness")
+    max_contamination = _resolve(max_contamination, "max_contamination")
+    min_genome_size = _resolve(min_genome_size, "min_genome_size")
+    max_genome_size = _resolve(max_genome_size, "max_genome_size")
+    n = _resolve(n, "n")
 
     # Locate the SQLite database
     db = find_sqlite_db(db_path, Path(cache_dir))
@@ -671,6 +831,23 @@ def query(
 
     if results.empty:
         click.echo("No genomes matched the query filters.", err=True)
+        # Feature 1: species suggestions when species filter was set
+        if species:
+            try:
+                conn = sqlite3.connect(str(db))
+                rows = conn.execute(
+                    "SELECT DISTINCT sylph_species FROM assembly "
+                    "WHERE sylph_species IS NOT NULL"
+                ).fetchall()
+                conn.close()
+                all_species = [r[0] for r in rows]
+                suggestions = _suggest_species(species, all_species)
+                if suggestions:
+                    click.echo("Did you mean one of:", err=True)
+                    for s in suggestions:
+                        click.echo(f"  {s}", err=True)
+            except Exception:
+                pass
         sys.exit(1)
 
     click.echo(f"  Found {len(results)} matching genomes")
@@ -694,6 +871,16 @@ def query(
         click.echo(f"  Filters: {', '.join(filters)}")
 
     if output:
+        # Feature 4: dry-run for downloads
+        if dry_run:
+            sample_ids = results["sample"].tolist()
+            click.echo(
+                f"[dry-run] Would download {len(sample_ids)} assemblies to {output}:"
+            )
+            for sid in sample_ids:
+                click.echo(f"  {sid}")
+            return
+
         # Download assemblies
         output.mkdir(parents=True, exist_ok=True)
 
@@ -744,9 +931,8 @@ def query(
 
         click.echo(f"Done! {len(extracted)} assemblies saved to {output}")
     else:
-        # List mode: print accessions to stdout
-        for _, row in results.iterrows():
-            click.echo(row["sample"])
+        # List mode: print results using selected output format
+        print_dataframe(results[["sample"]], output_format)
 
 
 # -- query list-countries subcommand --
@@ -851,6 +1037,446 @@ def download_db_cmd(cache_dir, no_cache, refresh, verbose):
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+# -- info subcommand (Feature 3) --
+
+
+@main.command()
+@click.argument("sample_accession")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=f"Path to ATB SQLite database. Default: looks in cache dir for {SQLITE_FILENAME}.",
+)
+@cache_options
+@verbose_option
+def info(sample_accession, db_path, cache_dir, no_cache, refresh, verbose):
+    """Show a detailed summary for a single sample accession.
+
+    \b
+    Example:
+      atbfetcher info SAMN12345678
+    """
+    _setup_logging(verbose)
+
+    db = find_sqlite_db(db_path, Path(cache_dir))
+    if db is None:
+        click.echo(
+            "ATB SQLite database not found. Run 'atbfetcher download-db' first.",
+            err=True,
+        )
+        sys.exit(1)
+
+    conn = sqlite3.connect(str(db))
+    try:
+        # Assembly info
+        asm_row = conn.execute(
+            "SELECT sample_accession, sylph_species, hq_filter, aws_url, "
+            "asm_fasta_on_osf FROM assembly WHERE sample_accession = ?",
+            [sample_accession],
+        ).fetchone()
+
+        if asm_row is None:
+            click.echo(f"Sample not found: {sample_accession}", err=True)
+            sys.exit(1)
+
+        click.echo(f"\n{'='*60}")
+        click.echo(f"  Sample: {asm_row[0]}")
+        click.echo(f"{'='*60}")
+
+        click.echo("\n[Assembly]")
+        click.echo(f"  Species      : {asm_row[1] or 'N/A'}")
+        click.echo(f"  HQ filter    : {asm_row[2] or 'N/A'}")
+        click.echo(f"  On OSF       : {'Yes' if asm_row[4] else 'No'}")
+        click.echo(f"  AWS URL      : {asm_row[3] or 'N/A'}")
+
+        # CheckM2 stats
+        chk_row = conn.execute(
+            "SELECT Completeness_Specific, Contamination, Genome_Size, "
+            "GC_Content, Contig_N50 FROM checkm2 WHERE sample_accession = ?",
+            [sample_accession],
+        ).fetchone()
+
+        click.echo("\n[Assembly Statistics (CheckM2)]")
+        if chk_row:
+            click.echo(f"  Completeness : {chk_row[0]:.1f}%")
+            click.echo(f"  Contamination: {chk_row[1]:.2f}%")
+            click.echo(f"  Genome size  : {chk_row[2]:,} bp" if chk_row[2] else "  Genome size  : N/A")
+            click.echo(f"  GC content   : {chk_row[3]:.1f}%" if chk_row[3] else "  GC content   : N/A")
+            click.echo(f"  Contig N50   : {chk_row[4]:,} bp" if chk_row[4] else "  Contig N50   : N/A")
+        else:
+            click.echo("  (no CheckM2 data)")
+
+        # MLST — may have multiple scheme rows; table may not exist in all DBs
+        mlst_rows = []
+        try:
+            mlst_rows = conn.execute(
+                "SELECT mlst_scheme, mlst_st, mlst_status FROM mlst "
+                "WHERE sample_accession = ? ORDER BY mlst_scheme",
+                [sample_accession],
+            ).fetchall()
+        except Exception:
+            # Try alternative column names used in some ATB schema versions
+            try:
+                mlst_rows = conn.execute(
+                    "SELECT scheme, st, status FROM mlst "
+                    "WHERE sample = ? ORDER BY scheme",
+                    [sample_accession],
+                ).fetchall()
+            except Exception:
+                mlst_rows = []
+
+        click.echo("\n[MLST]")
+        if mlst_rows:
+            for row in mlst_rows:
+                click.echo(f"  Scheme: {row[0]}  ST: {row[1]}  Status: {row[2]}")
+        else:
+            click.echo("  (no MLST data in database)")
+
+        # ENA metadata
+        ena_rows = conn.execute(
+            "SELECT e.country, e.collection_date, e.host, e.isolation_source, "
+            "r.run_accession "
+            "FROM run r JOIN ena_202505_used e ON r.run_accession = e.run_accession "
+            "WHERE r.sample_accession = ?",
+            [sample_accession],
+        ).fetchall()
+
+        click.echo("\n[ENA Metadata]")
+        if ena_rows:
+            for row in ena_rows:
+                click.echo(f"  Run              : {row[4]}")
+                click.echo(f"  Country          : {row[0] or 'N/A'}")
+                click.echo(f"  Collection date  : {row[1] or 'N/A'}")
+                click.echo(f"  Host             : {row[2] or 'N/A'}")
+                click.echo(f"  Isolation source : {row[3] or 'N/A'}")
+                if len(ena_rows) > 1:
+                    click.echo()
+        else:
+            click.echo("  (no ENA metadata)")
+
+        click.echo()
+    finally:
+        conn.close()
+
+
+# -- summarise subcommand (Feature 7) --
+
+
+@main.command()
+@click.option(
+    "--by",
+    "-b",
+    default="species",
+    show_default=True,
+    help="Column to group by (e.g. species, country, host, isolation_source).",
+)
+@click.option(
+    "--top",
+    "-t",
+    default=0,
+    show_default=True,
+    help="Show only the top N groups by count (0 = all).",
+)
+@click.option(
+    "--input",
+    "-i",
+    "input_file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Input TSV file (e.g. from query output). Reads from stdin if not set.",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=f"Path to ATB SQLite database for direct querying.",
+)
+@click.option("--species", "-s", default=None, help="Pre-filter by species before summarising.")
+@format_option
+@cache_options
+@verbose_option
+def summarise(by, top, input_file, db_path, species, output_format, cache_dir, no_cache, refresh, verbose):
+    """Compute group-by counts and stats from ATB metadata.
+
+    Can read from a TSV file, stdin, or query the SQLite database directly.
+
+    \b
+    Examples:
+      # Top 20 species in the database
+      atbfetcher summarise --by species --top 20
+
+      # Summarise piped query results by country
+      atbfetcher query --species "Escherichia coli" | atbfetcher summarise --by country --input -
+
+      # Summarise from a saved TSV
+      atbfetcher summarise --by isolation_source --input results.tsv
+    """
+    _setup_logging(verbose)
+
+    df: pd.DataFrame | None = None
+
+    # Determine data source
+    if input_file is not None:
+        if str(input_file) == "-":
+            # Read from stdin
+            import io as _io
+            raw = sys.stdin.read()
+            if raw.strip():
+                df = pd.read_csv(_io.StringIO(raw), sep="\t")
+        else:
+            df = pd.read_csv(input_file, sep="\t")
+    elif not sys.stdin.isatty():
+        # Piped input — only read if stdin has content
+        import io as _io
+        raw = sys.stdin.read()
+        if raw.strip():
+            df = pd.read_csv(_io.StringIO(raw), sep="\t")
+
+    if df is None:
+        # Query the SQLite database
+        db = find_sqlite_db(db_path, Path(cache_dir))
+        if db is None:
+            click.echo(
+                "No input provided and ATB SQLite database not found.\n\n"
+                "Either pipe query output, provide --input, or run 'atbfetcher download-db'.",
+                err=True,
+            )
+            sys.exit(1)
+
+        click.echo(f"Using database: {db}", err=True)
+        df = query_metadata(
+            db,
+            species=species,
+            country=None,
+            hq_only=True,
+        )
+
+    if df.empty:
+        click.echo("No data to summarise.", err=True)
+        sys.exit(1)
+
+    if by not in df.columns:
+        available_cols = ", ".join(df.columns.tolist())
+        click.echo(
+            f"Column '{by}' not found in data. Available columns: {available_cols}",
+            err=True,
+        )
+        sys.exit(1)
+
+    # Group by the chosen column and compute counts + numeric stats
+    grouped = df.groupby(by)
+    count_series = grouped.size().rename("count").reset_index()
+    count_series = count_series.sort_values("count", ascending=False).reset_index(drop=True)
+
+    # Add mean stats for numeric columns if present
+    numeric_cols = [
+        c for c in ["Completeness_Specific", "Contamination", "Genome_Size", "Contig_N50"]
+        if c in df.columns
+    ]
+    if numeric_cols:
+        agg = grouped[numeric_cols].mean().round(2).reset_index()
+        count_series = count_series.merge(agg, on=by, how="left")
+
+    if top > 0:
+        count_series = count_series.head(top)
+
+    print_dataframe(count_series, output_format)
+
+
+# -- mlst-query subcommand (Feature 5) --
+
+
+@main.command("mlst-query")
+@click.option(
+    "--species", "-s", default=None, help="Filter by species (e.g. 'Escherichia coli')."
+)
+@click.option("--scheme", default=None, help="Filter by MLST scheme name (e.g. 'ecoli_achtman_4').")
+@click.option("--st", default=None, help="Filter by sequence type number (e.g. '131').")
+@click.option(
+    "--hq-only/--no-hq",
+    default=True,
+    show_default=True,
+    help="Only include ATB high-quality genomes.",
+)
+@click.option(
+    "--n",
+    "-n",
+    type=int,
+    default=None,
+    help="Maximum number of results to return.",
+)
+@format_option
+@cache_options
+@verbose_option
+def mlst_query(species, scheme, st, hq_only, n, output_format, cache_dir, no_cache, refresh, verbose):
+    """Query samples by MLST data — output accessions + MLST info.
+
+    Filters the MLST dataset by ST number, scheme name, and/or species.
+    Prints a table of matching sample accessions with their MLST data.
+
+    \b
+    Examples:
+      # All E. coli ST131 samples
+      atbfetcher mlst-query --species "Escherichia coli" --st 131
+
+      # Samples typed with the ecoli_achtman_4 scheme
+      atbfetcher mlst-query --scheme ecoli_achtman_4
+
+      # E. coli ST131 output as TSV
+      atbfetcher mlst-query --species "Escherichia coli" --st 131 --format tsv
+    """
+    _setup_logging(verbose)
+
+    cache = MetadataCache(cache_dir=cache_dir, no_cache=no_cache, refresh=refresh)
+
+    click.echo("Loading MLST data...", err=True)
+    mlst_df = cache.load_mlst()
+
+    # Filter by scheme
+    if scheme:
+        mlst_df = mlst_df[mlst_df["mlst_scheme"] == scheme]
+        if mlst_df.empty:
+            click.echo(f"No results for scheme '{scheme}'.", err=True)
+            sys.exit(1)
+
+    # Filter by ST
+    if st:
+        mlst_df = mlst_df[mlst_df["mlst_st"].astype(str) == str(st)]
+        if mlst_df.empty:
+            click.echo(f"No results for ST '{st}'.", err=True)
+            sys.exit(1)
+
+    # Filter by species (requires species calls)
+    if species:
+        click.echo("Loading species calls...", err=True)
+        species_calls_df = cache.load_species_calls(hq_only=hq_only)
+        samples_df = get_samples_for_species(species, species_calls_df)
+        if samples_df.empty:
+            click.echo(f"No samples found for species: {species}", err=True)
+            available = list_species(species_calls_df)
+            suggestions = _suggest_species(species, available)
+            if suggestions:
+                click.echo("Did you mean one of:", err=True)
+                for s in suggestions:
+                    click.echo(f"  {s}", err=True)
+            sys.exit(1)
+        mlst_df = mlst_df[mlst_df["sample"].isin(samples_df["sample"])]
+        if mlst_df.empty:
+            click.echo(f"No MLST results for species '{species}'.", err=True)
+            sys.exit(1)
+    elif hq_only:
+        # Apply HQ filter without species constraint
+        click.echo("Loading species calls for HQ filter...", err=True)
+        species_calls_df = cache.load_species_calls(hq_only=True)
+        mlst_df = mlst_df[mlst_df["sample"].isin(species_calls_df["sample"])]
+
+    if n is not None:
+        mlst_df = mlst_df.head(n)
+
+    click.echo(f"Found {len(mlst_df)} matching samples.", err=True)
+    print_dataframe(mlst_df, output_format)
+
+
+# -- config subcommand (Feature 8) --
+
+
+@main.group()
+def config():
+    """Manage atbfetcher user configuration.
+
+    Settings in ``~/.atbfetcher/config.toml`` serve as defaults that CLI flags
+    can always override.
+
+    \b
+    Subcommands:
+      init   Create a default config file
+      show   Display the current config
+      set    Set a config value
+    """
+
+
+@config.command("init")
+@click.option("--force", is_flag=True, default=False, help="Overwrite existing config.")
+def config_init(force):
+    """Create a default config file at ~/.atbfetcher/config.toml."""
+    if CONFIG_PATH.exists() and not force:
+        click.echo(f"Config already exists at {CONFIG_PATH}")
+        click.echo("Use --force to overwrite.")
+        return
+
+    cfg = default_config()
+    write_config(cfg)
+    click.echo(f"Created default config at {CONFIG_PATH}")
+    _print_config_dict(cfg)
+
+
+@config.command("show")
+def config_show():
+    """Display the current configuration."""
+    cfg = load_config()
+    if not cfg:
+        click.echo(f"No config file found at {CONFIG_PATH}")
+        click.echo("Run 'atbfetcher config init' to create one.")
+        return
+
+    click.echo(f"Config file: {CONFIG_PATH}\n")
+    _print_config_dict(cfg)
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.option(
+    "--section",
+    default="defaults",
+    show_default=True,
+    help="Config section to write to.",
+)
+def config_set(key, value, section):
+    """Set a config value.
+
+    \b
+    Examples:
+      atbfetcher config set cache_dir /data/atb_cache
+      atbfetcher config set output_format tsv
+      atbfetcher config set threads 8
+    """
+    cfg = load_config()
+    if not cfg:
+        cfg = default_config()
+
+    if section not in cfg:
+        cfg[section] = {}
+
+    # Try to coerce numeric values
+    coerced: str | int | float = value
+    try:
+        coerced = int(value)
+    except ValueError:
+        try:
+            coerced = float(value)
+        except ValueError:
+            coerced = value
+
+    cfg[section][key] = coerced
+    write_config(cfg)
+    click.echo(f"Set [{section}] {key} = {coerced!r}")
+    click.echo(f"Config saved to {CONFIG_PATH}")
+
+
+def _print_config_dict(cfg: dict) -> None:
+    """Pretty-print a config dict."""
+    for section, values in cfg.items():
+        click.echo(f"[{section}]")
+        if isinstance(values, dict):
+            for k, v in values.items():
+                click.echo(f"  {k} = {v!r}")
+        else:
+            click.echo(f"  {values!r}")
+        click.echo()
 
 
 if __name__ == "__main__":
